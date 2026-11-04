@@ -98,7 +98,7 @@ export function PortalServices() {
           {types.map((t) => (
             <li key={t.id} className="row" style={{ justifyContent: "space-between" }}>
               <span>
-                <strong>{t.type_name}</strong> · fee {t.fee ?? "0"} · {t.valid_months} months{t.documents.length ? ` · needs ${t.documents.join(", ")}` : ""}
+                <strong>{t.type_name}</strong> · fee {t.fee ?? "0"} · {t.valid_months === 1 ? "1 month" : `${t.valid_months} months`}{t.documents.length ? ` · needs ${t.documents.join(", ")}` : ""}
               </span>
               <Button loading={busy === `apply-${t.id}`} onClick={() => void run(`apply-${t.id}`, () => api.post(`${BASE}/applications`, { permit_type: t.id }), "Draft started")}>
                 Apply

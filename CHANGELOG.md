@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1
+
+From a browser walk of the citizens' portal.
+
+- A permit valid for one month says so ("1 month", not "1 months").
+- Rebuilt with Ferrum-Frontend's fields that name their controls, so the portal's forms are named for assistive technology.
+
 ## 0.1.0
 
 Public services (FERRUM-INDUSTRY-010).
