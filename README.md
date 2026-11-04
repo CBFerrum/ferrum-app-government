@@ -58,6 +58,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.1.2** | Rebuilt with Ferrum-Frontend 80ff179: labels name their fields, and linked titles show their titles. |
 | **0.1.1** | One month says "1 month", and the citizens' forms are named. |
 | **0.1.0** | Permits applied for, reviewed, paid through ERP and issued with their expiry, cases with deadlines, and citizens' "Your services" on the portal (FERRUM-INDUSTRY-010). |
 
