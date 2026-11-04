@@ -27,6 +27,7 @@ export interface Application {
   status?: string | null;
   documents: { document?: string | null; file?: string | null }[];
   fee_invoice?: string | null;
+  fee_drafted?: boolean;
   decision_note?: string | null;
 }
 
@@ -120,6 +121,7 @@ export function PortalServices() {
             </header>
             {a.decision_note && <p>{a.decision_note}</p>}
             {a.fee_invoice && <a href={`/portal/invoices/${a.fee_invoice}`}>The fee's invoice</a>}
+            {a.fee_drafted && <p className="muted">The fee's invoice is not issued yet.</p>}
             {a.status === "Draft" && (
               <>
                 {(t?.documents ?? []).map((d) => (
