@@ -6,7 +6,7 @@
 
 use base64::Engine;
 use ferrum_domain::util::{elevated, id, rows, s, sys};
-use ferrum_kernel::{Ctx, Doc, Error, Filter, Kernel, Result, Site, SiteRequest, SiteResponse, with_retry};
+use ferrum_kernel::{Ctx, Doc, Error, Filter, Kernel, Result, Site, SiteRequest, SiteResponse, Tx, with_retry};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
@@ -76,10 +76,25 @@ async fn own(k: &Kernel, user: &Ctx, email: &str, app: Uuid) -> Result<Doc> {
     Ok(doc)
 }
 
-fn summary(a: &Doc) -> Value {
-    json!({"id": s(a, "id"), "number": s(a, "number"), "permit_type": s(a, "permit_type"), "status": s(a, "status"), "details": s(a, "details"),
-           "documents": rows(a, "documents").iter().map(|d| json!({"document": s(d, "document"), "file": s(d, "file")})).collect::<Vec<_>>(),
-           "fee_invoice": s(a, "fee_invoice"), "decision_note": s(a, "decision_note"), "permit": s(a, "permit")})
+/// An application as its applicant sees it. The fee's invoice is linked once issued: a draft is not
+/// the applicant's yet, and Your invoices does not open one.
+async fn summary(k: &Kernel, sctx: &Ctx, tx: &mut Tx, a: &Doc) -> Result<Value> {
+    let issued = match id(a, "fee_invoice") {
+        Some(si) => !k.find_tx(sctx, tx, "SalesInvoice", &[Filter::eq("id", si.to_string()), Filter::eq("docstatus", 1)], None, 1).await?.is_empty(),
+        None => false,
+    };
+    Ok(json!({"id": s(a, "id"), "number": s(a, "number"), "permit_type": s(a, "permit_type"), "status": s(a, "status"), "details": s(a, "details"),
+              "documents": rows(a, "documents").iter().map(|d| json!({"document": s(d, "document"), "file": s(d, "file")})).collect::<Vec<_>>(),
+              "fee_invoice": if issued { s(a, "fee_invoice") } else { None }, "fee_drafted": !issued && s(a, "fee_invoice").is_some(),
+              "decision_note": s(a, "decision_note"), "permit": s(a, "permit")}))
+}
+
+/// [`summary`], in a transaction of its own.
+async fn summarise(k: &Kernel, user: &Ctx, a: &Doc) -> Result<Value> {
+    let mut tx = k.db.tenant_tx(user.tenant).await?;
+    let out = summary(k, &sys(user), &mut tx, a).await?;
+    tx.commit().await?;
+    Ok(out)
 }
 
 /// `GET portal/home`: what may be applied for, and the caller's applications, permits and cases.
@@ -100,7 +115,8 @@ async fn home(k: &Kernel, user: &Ctx, email: &str) -> Result<Value> {
         .iter()
         .filter_map(|a| id(a, "id"))
     {
-        applications.push(summary(&k.get_tx(&sctx, &mut tx, "PermitApplication", a, false).await?));
+        let doc = k.get_tx(&sctx, &mut tx, "PermitApplication", a, false).await?;
+        applications.push(summary(k, &sctx, &mut tx, &doc).await?);
     }
     let permits: Vec<Value> = k
         .find_tx(&sctx, &mut tx, "Permit", &[Filter::eq("holder_email", email)], Some("issued_on desc"), 50)
@@ -143,7 +159,7 @@ async fn draft(k: &Kernel, user: &Ctx, email: &str, body: &Map<String, Value>) -
             crate::obj(json!({"permit_type": kind.to_string(), "applicant_name": name, "applicant_email": email, "details": details})),
         )
         .await?;
-    Ok(summary(&saved))
+    summarise(k, user, &saved).await
 }
 
 /// `POST portal/applications/{id}/documents` `{document, file_name, content_type, data}`: a document
@@ -168,14 +184,14 @@ async fn attach(k: &Kernel, user: &Ctx, email: &str, app: Uuid, body: &Map<Strin
         rows(&doc, "documents").into_iter().filter(|r| s(r, "document").map(str::to_lowercase) != Some(name.to_lowercase())).map(Value::Object).collect();
     documents.push(json!({"document": name, "file": url}));
     let saved = k.update(&elevated(user), "PermitApplication", app, crate::obj(json!({"documents": documents})), None).await?;
-    Ok(summary(&saved))
+    summarise(k, user, &saved).await
 }
 
 /// `POST portal/applications/{id}/submit|withdraw`: the caller's application submitted or withdrawn.
 async fn act(k: &Kernel, user: &Ctx, email: &str, app: Uuid, action: &str) -> Result<Value> {
     own(k, user, email, app).await?;
     let result = k.run_action(&elevated(user), "PermitApplication", app, action, Value::Null).await?;
-    let mut out = summary(&own(k, user, email, app).await?);
+    let mut out = summarise(k, user, &own(k, user, email, app).await?).await?;
     out["result"] = result;
     Ok(out)
 }

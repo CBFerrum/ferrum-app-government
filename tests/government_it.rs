@@ -225,7 +225,8 @@ async fn scenario() {
     assert_eq!(t.get("PermitApplication", app).await["documents"].as_array().unwrap().len(), 2);
     let submitted = call(&k, Some(&ria), "POST", &format!("portal/applications/{app}/submit"), json!({})).await.unwrap();
     assert_eq!(submitted["status"], "Submitted");
-    let fee = t.get("SalesInvoice", uid(&submitted["fee_invoice"])).await;
+    assert!(submitted["fee_invoice"].is_null() && submitted["fee_drafted"] == true, "a draft invoice is not linked: Your invoices does not open it");
+    let fee = t.get("SalesInvoice", uid(&t.get("PermitApplication", app).await["fee_invoice"])).await;
     assert_eq!(dec(&fee["grand_total"]), 2500.0);
     let customer = t.get("Customer", uid(&fee["customer"])).await;
     assert_eq!((customer["customer_name"].as_str(), customer["email"].as_str()), (Some("Ria Sen"), Some("ria@home.test")), "made from the applicant");
@@ -236,8 +237,9 @@ async fn scenario() {
     );
     // Her next fee is invoiced to the same customer; a closed type takes no applications.
     let sign = uid(&call(&k, Some(&ria), "POST", "portal/applications", json!({"permit_type": signage.to_string()})).await.unwrap()["id"]);
-    let sign_fee = call(&k, Some(&ria), "POST", &format!("portal/applications/{sign}/submit"), json!({})).await.unwrap();
-    assert_eq!(t.get("SalesInvoice", uid(&sign_fee["fee_invoice"])).await["customer"], fee["customer"], "one customer a citizen");
+    call(&k, Some(&ria), "POST", &format!("portal/applications/{sign}/submit"), json!({})).await.unwrap();
+    let sign_fee = t.get("PermitApplication", sign).await["fee_invoice"].clone();
+    assert_eq!(t.get("SalesInvoice", uid(&sign_fee)).await["customer"], fee["customer"], "one customer a citizen");
     let closed = uid(&t.insert(&officer, "PermitApplication", json!({"permit_type": stall.to_string(), "applicant_name": "Walk-in"})).await["id"]);
     refused(t.act(&officer, "PermitApplication", closed, "submit_application", Value::Null).await, "invalid", "not open for applications");
     // A document named without its file is still needed.
@@ -258,6 +260,9 @@ async fn scenario() {
     refused(t.act(&officer, "PermitApplication", app, "approve", Value::Null).await, "invalid", "the fee is not paid yet");
     let fee_id = uid(&fee["id"]);
     t.k.submit(&a, "SalesInvoice", fee_id, None).await.expect("the fee invoice submitted");
+    let issued_home = call(&k, Some(&ria), "GET", "portal/home", Value::Null).await.unwrap();
+    let mine = issued_home["applications"].as_array().unwrap().iter().find(|x| x["id"] == app.to_string()).unwrap();
+    assert_eq!((mine["fee_invoice"].as_str(), &mine["fee_drafted"]), (Some(fee_id.to_string().as_str()), &json!(false)), "linked once issued");
     refused(t.act(&officer, "PermitApplication", app, "approve", Value::Null).await, "invalid", "the fee is not paid yet");
     let payment = t.k.run_action(&a, "SalesInvoice", fee_id, "make_payment", Value::Null).await.expect("a payment");
     t.k.submit(&a, "PaymentEntry", uid(&payment["id"]), None).await.expect("paid");
@@ -275,7 +280,7 @@ async fn scenario() {
     // ───────────── a rejection, a permit that expires, a withdrawal ─────────────
     let p1 = uid(&call(&k, Some(&ria), "POST", "portal/applications", json!({"permit_type": party.to_string()})).await.unwrap()["id"]);
     let free = call(&k, Some(&ria), "POST", &format!("portal/applications/{p1}/submit"), json!({})).await.unwrap();
-    assert!(free["fee_invoice"].is_null(), "no fee, no invoice");
+    assert!(t.get("PermitApplication", p1).await["fee_invoice"].is_null() && free["fee_drafted"] == false, "no fee, no invoice");
     t.act(&officer, "PermitApplication", p1, "take_up", Value::Null).await.unwrap();
     refused(t.act(&officer, "PermitApplication", p1, "reject", Value::Null).await, "invalid", "says why");
     t.act(&officer, "PermitApplication", p1, "reject", json!({"note": "The road is a bus route"})).await.unwrap();

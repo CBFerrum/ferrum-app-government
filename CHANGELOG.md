@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3
+
+From the browser walk of a permit's fee.
+
+- An application links its fee's invoice once the invoice is issued. A draft fee invoice was linked
+  as soon as the application was submitted, and Your invoices answered "invoice not found", as it
+  opens only issued ones; until then the application says the invoice is not issued yet.
+- Rebuilt with Ferrum-Frontend 16b5c57.
+
 ## 0.1.2
 
 Rebuilt with Ferrum-Frontend 80ff179: a field's label names its control for assistive technology, and a record whose title is a link shows that record's title, not its id.
