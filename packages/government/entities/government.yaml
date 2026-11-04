@@ -1,0 +1,126 @@
+- name: GovernmentSettings
+  label: Government Settings
+  kind: settings
+  module: government
+  description: "Where permit fees are invoiced from."
+  fields:
+    - {name: company, type: link, to: Company, required: true}
+    - {name: fee_item, type: link, to: Item, required: true, description: "What a permit's fee is invoiced as, unless its type says otherwise"}
+  form:
+    - {label: Fees, fields: [company, fee_item]}
+
+- name: PermitDocument
+  label: Document Needed
+  kind: child
+  fields:
+    - {name: document, type: data, required: true, in_list: true}
+
+- name: PermitType
+  label: Permit Type
+  label_plural: Permit Types
+  kind: master
+  module: government
+  title_field: type_name
+  description: A permit people apply for, its fee, the documents it needs, and how long it lasts.
+  fields:
+    - {name: type_name, type: data, required: true, unique: true, in_list: true}
+    - {name: fee, type: currency, default: 0, in_list: true}
+    - {name: fee_item, type: link, to: Item, description: "The settings' when empty"}
+    - {name: valid_months, type: int, required: true, default: 12, in_list: true}
+    - {name: documents, type: table, of: PermitDocument, label: Documents Needed}
+    - {name: description, type: text}
+    - {name: active, type: check, default: true, in_list: true, in_filter: true}
+  list: {columns: [type_name, fee, valid_months, active], sort: type_name asc}
+
+- name: ApplicationDocument
+  label: Document
+  kind: child
+  fields:
+    - {name: document, type: data, required: true, in_list: true}
+    - {name: file, type: attach, in_list: true}
+
+- name: PermitApplication
+  label: Permit Application
+  label_plural: Permit Applications
+  kind: master
+  module: government
+  title_field: applicant_name
+  description: Someone's application for a permit, from the portal or the counter. Submitted with its documents and its fee invoiced; approved once the fee is paid; issued as a permit.
+  fields:
+    - {name: permit_type, type: link, to: PermitType, required: true, in_list: true, in_filter: true}
+    - {name: applicant_name, type: data, required: true, in_list: true}
+    - {name: applicant_email, type: email, in_filter: true, description: "Their portal sign-in, when they applied there"}
+    - {name: details, type: text}
+    - {name: documents, type: table, of: ApplicationDocument}
+    - {name: status, type: select, options: [Draft, Submitted, Under Review, Approved, Rejected, Issued, Withdrawn], default: Draft, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: submitted_on, type: date, read_only: true, no_copy: true}
+    - {name: officer, type: email, read_only: true, no_copy: true, in_list: true, description: "Who took it up"}
+    - {name: customer, type: link, to: Customer, read_only: true, no_copy: true, description: "Who the fee is invoiced to: made from the applicant"}
+    - {name: fee_invoice, type: link, to: SalesInvoice, read_only: true, no_copy: true}
+    - {name: decision_note, type: text, read_only: true, no_copy: true}
+    - {name: decided_on, type: date, read_only: true, no_copy: true}
+    - {name: permit, type: link, to: Permit, read_only: true, no_copy: true}
+  actions:
+    - {name: submit_application, label: Submit It, permission: write, condition: "doc.status == 'Draft'"}
+    - {name: take_up, label: Take It Up, permission: write, condition: "doc.status == 'Submitted'"}
+    - {name: approve, label: Approve It, permission: write, condition: "doc.status == 'Under Review'", params: [{name: note, type: text, label: Note}]}
+    - {name: reject, label: Reject It, permission: write, condition: "doc.status == 'Under Review'", params: [{name: note, type: text, label: Why, required: true}]}
+    - {name: issue, label: Issue the Permit, permission: write, condition: "doc.status == 'Approved'"}
+    - {name: withdraw, label: Withdraw It, permission: write, condition: "doc.status == 'Draft' || doc.status == 'Submitted'"}
+  numbering: {template: "APP-{YYYY}-{seq:5}"}
+  list: {columns: [number, permit_type, applicant_name, status, officer], sort: created_at desc}
+
+- name: Permit
+  label: Permit
+  label_plural: Permits
+  kind: master
+  module: government
+  title_field: holder_name
+  description: A permit issued, valid until it expires or is revoked.
+  fields:
+    - {name: permit_type, type: link, to: PermitType, required: true, read_only: true, in_list: true, in_filter: true}
+    - {name: application, type: link, to: PermitApplication, read_only: true}
+    - {name: holder_name, type: data, required: true, read_only: true, in_list: true}
+    - {name: holder_email, type: email, read_only: true}
+    - {name: issued_on, type: date, read_only: true, in_list: true}
+    - {name: expires_on, type: date, read_only: true, in_list: true}
+    - {name: status, type: select, options: [Valid, Expired, Revoked], default: Valid, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: revoked_reason, type: text, read_only: true, no_copy: true}
+  actions:
+    - {name: revoke, label: Revoke It, permission: write, condition: "doc.status == 'Valid'", params: [{name: reason, type: text, label: Why, required: true}]}
+  numbering: {template: "PRM-{YYYY}-{seq:5}"}
+  list: {columns: [number, permit_type, holder_name, expires_on, status], sort: issued_on desc}
+
+- name: CaseCategory
+  label: Case Category
+  label_plural: Case Categories
+  kind: master
+  module: government
+  title_field: category_name
+  fields:
+    - {name: category_name, type: data, required: true, unique: true, in_list: true}
+    - {name: days_to_resolve, type: int, required: true, default: 10, in_list: true, description: "A case is due this many days after it opens"}
+  list: {columns: [category_name, days_to_resolve], sort: category_name asc}
+
+- name: PublicCase
+  label: Case
+  label_plural: Cases
+  kind: master
+  module: government
+  title_field: subject
+  description: Something a citizen raised, due within its category's days.
+  fields:
+    - {name: subject, type: data, required: true, in_list: true}
+    - {name: category, type: link, to: CaseCategory, required: true, in_list: true, in_filter: true}
+    - {name: citizen_name, type: data, required: true, in_list: true}
+    - {name: citizen_email, type: email, in_filter: true}
+    - {name: description, type: text}
+    - {name: status, type: select, options: [Open, In Progress, Resolved, Closed], default: Open, in_list: true, in_filter: true}
+    - {name: officer, type: email, in_list: true, in_filter: true}
+    - {name: opened_on, type: date, read_only: true, no_copy: true, in_list: true}
+    - {name: due_on, type: date, read_only: true, no_copy: true, in_list: true}
+    - {name: resolution, type: text}
+    - {name: resolved_on, type: date, read_only: true, no_copy: true}
+    - {name: overdue, type: check, read_only: true, no_copy: true, in_list: true, in_filter: true}
+  numbering: {template: "CASE-{YYYY}-{seq:5}"}
+  list: {columns: [number, subject, category, status, due_on, overdue], sort: created_at desc}

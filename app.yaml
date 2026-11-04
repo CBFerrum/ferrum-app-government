@@ -1,0 +1,36 @@
+id: government
+name: Government
+version: 0.1.0
+publisher: cbferrum
+summary: "Permits applied for, reviewed, paid through ERP and issued with their expiry, cases with deadlines, and a citizens' portal"
+description: README.md
+categories: [industry, support]
+license: AGPL-3.0-only
+homepage: https://github.com/CBFerrum/ferrum-app-government
+support: https://github.com/CBFerrum/ferrum-app-government/issues
+runtime: native
+platform: ">=0.3.2, <0.4"
+# Fees are invoiced through ERP: installing it installs ERP.
+requires: {erp: ">=0.1"}
+packages: [government]
+uninstall: ask
+# Its own interface at /government/: the officers' queues; and the portal's "Your services".
+ui:
+  dist: ui/dist
+contributes:
+  shell.app:
+    - id: government
+      route: government
+      title: Government
+      description: Permits, applications and citizens' cases
+      icon: landmark
+      color: "#4338ca"
+      roles: [Permit Officer, Case Officer, Services Manager]
+  shell.open:
+    - {id: government, package: government, path: "government/e/{entity}/{id}", list: "government/e/{entity}"}
+  shell.create:
+    - {id: application, label: Permit Application, path: government/e/PermitApplication/new, entity: PermitApplication}
+    - {id: case, label: Case, path: government/e/PublicCase/new, entity: PublicCase}
+  # The workspace's portal: a citizen's applications, permits and cases at /portal/services/.
+  shell.portal:
+    - {id: services, title: Your services, description: "Apply for permits, follow your applications, and raise cases"}
