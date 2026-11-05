@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6
+
+Rebuilt with Ferrum-Frontend 00dea07: in a workflow state that names what may change, the other fields show read-only, and the fields the state needs show required.
+
 ## 0.1.5
 
 Personal-data requests find applicants, permit holders and citizens by email or name. An application still in draft, or withdrawn, is erased; one put to the office, a permit and a case are kept as public records, and the answer says why (Ferrum's FERRUM-PRIVACY-002).
