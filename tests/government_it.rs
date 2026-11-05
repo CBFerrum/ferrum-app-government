@@ -352,4 +352,20 @@ async fn scenario() {
     let p4 = uid(&call(&k, Some(&ria), "POST", "portal/applications", json!({"permit_type": party.to_string()})).await.unwrap()["id"]);
     call(&k, Some(&ria), "POST", &format!("portal/applications/{p4}/submit"), json!({})).await.unwrap();
     refused(t.act(&manager, "PermitApplication", p4, "take_up", Value::Null).await, "forbidden", "");
+
+    // ───────────── a citizen's request ─────────────
+    // A draft Ria never put to the office goes; what she did put to it, her permit and her cases are
+    // public records, kept, and the answer says why.
+    let unsent =
+        uid(&call(&k, Some(&ria), "POST", "portal/applications", json!({"permit_type": signage.to_string(), "details": "A shop sign"})).await.unwrap()["id"]);
+    let asked = t.k.personal_data(&t.admin, "ria@home.test").await.unwrap();
+    let records = asked["records"].as_array().unwrap();
+    assert!(records.iter().any(|r| r["entity"] == "Permit") && records.iter().any(|r| r["id"] == json!(unsent.to_string())), "{asked}");
+    let erased = t.k.erase_personal_data(&t.admin, "ria@home.test", "Request 1").await.unwrap();
+    assert!(erased["erased"].as_array().unwrap().iter().any(|r| r["id"] == json!(unsent.to_string())), "{erased}");
+    let kept = erased["retained"].as_array().unwrap();
+    assert!(kept.iter().any(|r| r["entity"] == "Permit") && kept.iter().any(|r| r["id"] == json!(p4.to_string())), "{erased}");
+    let gone = t.get("PermitApplication", unsent).await;
+    assert!(gone["applicant_email"] != "ria@home.test" && gone["details"].is_null(), "{gone:?}");
+    assert_eq!(t.get("PermitApplication", p4).await["applicant_email"], "ria@home.test", "what she put to the office stays");
 }
