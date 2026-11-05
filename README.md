@@ -58,6 +58,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.1.6** | Rebuilt with Ferrum-Frontend 00dea07: a workflow state's kept fields are read-only, its needed ones required. |
 | **0.1.5** | Personal-data requests find applicants, permit holders and citizens; drafts erased, decided records kept as public records. |
 | **0.1.4** | Rebuilt with Ferrum-Frontend daeadda: actions say what they did. |
 | **0.1.3** | The fee's invoice is linked once issued; until then the application says it is not issued yet. |
