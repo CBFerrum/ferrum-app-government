@@ -58,6 +58,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.1.5** | Personal-data requests find applicants, permit holders and citizens; drafts erased, decided records kept as public records. |
 | **0.1.4** | Rebuilt with Ferrum-Frontend daeadda: actions say what they did. |
 | **0.1.3** | The fee's invoice is linked once issued; until then the application says it is not issued yet. |
 | **0.1.2** | Rebuilt with Ferrum-Frontend 80ff179: labels name their fields, and linked titles show their titles. |
