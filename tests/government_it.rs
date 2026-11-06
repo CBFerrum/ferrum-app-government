@@ -447,7 +447,7 @@ async fn scenario() {
         .insert(
             &manager,
             "PermitType",
-            json!({"type_name": "Market Stall", "fee": "0", "valid_months": 1,
+            json!({"type_name": "Fair Stall", "fee": "0", "valid_months": 1,
                    "stages": [{"stage": "Fire safety", "role": "Fire Officer"}, {"stage": "Health check", "role": "Health Officer", "alongside": true},
                               {"stage": "Final review", "role": "Planning Officer"}]}),
         )
@@ -455,15 +455,14 @@ async fn scenario() {
     let health = t.user("health@town.test", &["Permit Officer", "Health Officer"]).await;
     let both = t.user("both@town.test", &["Permit Officer", "Fire Officer", "Health Officer"]).await;
     let lee = t.citizen("lee@home.test", "Lee Park").await;
-    let stall = |k: &Kernel| {
-        let (k, lee) = (k.clone(), lee.clone());
-        async move {
-            let m = uid(&call(&k, Some(&lee), "POST", "portal/applications", json!({"permit_type": market.to_string()})).await.unwrap()["id"]);
-            call(&k, Some(&lee), "POST", &format!("portal/applications/{m}/submit"), json!({})).await.unwrap();
-            m
-        }
-    };
-    let m1 = stall(&k).await;
+    // Two applications for a stall, submitted.
+    let mut stalls = vec![];
+    for _ in 0..2 {
+        let m = uid(&call(&k, Some(&lee), "POST", "portal/applications", json!({"permit_type": market.to_string()})).await.unwrap()["id"]);
+        call(&k, Some(&lee), "POST", &format!("portal/applications/{m}/submit"), json!({})).await.unwrap();
+        stalls.push(m);
+    }
+    let (m1, m2) = (stalls[0], stalls[1]);
     t.act(&officer, "PermitApplication", m1, "take_up", Value::Null).await.unwrap();
     assert_eq!(t.get("PermitApplication", m1).await["stage"], "Fire safety, Health check", "waiting for both at once");
     refused(t.act(&officer, "PermitApplication", m1, "approve", Value::Null).await, "invalid", "Fire safety, Health check are not passed yet");
@@ -475,7 +474,6 @@ async fn scenario() {
     t.act(&both, "PermitApplication", m1, "pass_stage", Value::Null).await.expect("fire passed");
     assert_eq!(t.get("PermitApplication", m1).await["stage"], "Final review", "the group done, the next stage");
     // Someone who may pass both passes one; a rejection fails what it still waited for.
-    let m2 = stall(&k).await;
     t.act(&officer, "PermitApplication", m2, "take_up", Value::Null).await.unwrap();
     t.act(&both, "PermitApplication", m2, "pass_stage", json!({"stage": "Health check"})).await.expect("one of the two");
     refused(t.act(&both, "PermitApplication", m2, "pass_stage", Value::Null).await, "forbidden", "someone other than whoever passed a stage beside it");
