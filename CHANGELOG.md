@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4
+
+Rebuilt with Ferrum-Frontend a64416a: a new record's box whose default is 1 shows ticked, as it is saved.
+
 ## 0.2.3
 
 Found walking the citizens' portal on 7 November: a permit type's fee shows as money, and a type
