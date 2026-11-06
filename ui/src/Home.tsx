@@ -54,12 +54,13 @@ export function Home() {
   if (q.isPending) return <PageLoading />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   const app = (r: Row) => `${String(r.number ?? "")} · ${String(r.applicant_name ?? "")}`;
+  const reviewing = (r: Row) => (r.stage ? `${app(r)} · waiting for ${String(r.stage)}` : app(r));
   return (
     <div className="np-page">
       <h2>Queues</h2>
       <div className="np-columns">
         <Queue title="To take up" list={q.data.submitted} entity="PermitApplication" label={app} />
-        <Queue title="Under review" list={q.data.review} entity="PermitApplication" label={app} />
+        <Queue title="Under review" list={q.data.review} entity="PermitApplication" label={reviewing} />
         <Queue title="To issue" list={q.data.approved} entity="PermitApplication" label={app} />
         <Queue title="Open cases" list={q.data.cases} entity="PublicCase" label={(r) => `${String(r.number ?? "")} · ${String(r.subject ?? "")} · due ${String(r.due_on ?? "")}`} />
       </div>
