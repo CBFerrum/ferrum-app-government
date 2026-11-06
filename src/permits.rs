@@ -392,7 +392,7 @@ pub(crate) async fn remind(k: &Kernel, ctx: &Ctx, tx: &mut Tx, today: NaiveDate)
     let due: Vec<(Uuid, Option<String>, Option<String>, NaiveDate)> = sqlx::query_as(
         "select p.id, p.number, p.holder_email, p.expires_on from e_permit p join e_permit_type t on t.tenant_id = p.tenant_id and t.id = p.permit_type \
          where p.tenant_id = $1 and p.status = 'Valid' and coalesce(t.renewable, false) and p.reminded_on is null and p.renewal is null \
-         and p.expires_on - coalesce(t.renew_within_days, 60) <= $2",
+         and p.expires_on - coalesce(t.renew_within_days, 60)::int <= $2",
     )
     .bind(ctx.tenant)
     .bind(today)
