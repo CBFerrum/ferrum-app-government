@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.5
+
+Review stages side by side. A stage marked Alongside The One Before is passed side by side with it,
+in any order, each by someone holding its own role, and no one passes two stages of one group; the
+application's Waiting For names them all, and it moves on once every one is passed. Pass This
+Stage takes the stage the caller may pass, or the one named when they may pass more than one. A
+rejection records each stage it still waited for as failed. Two stages of a type may no longer
+share a name.
+
 ## 0.2.4
 
 Rebuilt with Ferrum-Frontend a64416a: a new record's box whose default is 1 shows ticked, as it is saved.

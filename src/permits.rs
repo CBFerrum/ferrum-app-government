@@ -1,7 +1,8 @@
 //! Permits. An application is submitted with every document its type needs, and its fee, if any,
 //! is invoiced through ERP to a customer made from the applicant. An officer takes it up; when its
 //! type has review stages, each is passed in order by someone holding the stage's role, never by
-//! whoever passed the stage before, and a site inspection says what it found. It is approved once
+//! whoever passed the stage before, and a site inspection says what it found. Stages alongside the
+//! one before are passed side by side, in any order, each by someone else. It is approved once
 //! every stage is passed and the fee is paid, on conditions if any, or rejected saying why.
 //! Approved, it is issued as a permit valid for its type's months; a permit may be revoked, saying
 //! why, and expires by itself. A renewable permit is renewed, from its type's days before it
@@ -19,6 +20,26 @@ use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use uuid::Uuid;
+
+/// A permit type's stages: each its own name.
+pub struct TypeHook;
+
+#[async_trait]
+impl DocHook for TypeHook {
+    fn name(&self) -> &'static str {
+        "government.permit_type"
+    }
+
+    async fn validate(&self, _hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
+        let mut seen = HashSet::new();
+        for (stage, ..) in stages(doc) {
+            if !seen.insert(stage.to_lowercase()) {
+                return Err(Error::field("stages", format!("two stages are called {stage}")));
+            }
+        }
+        Ok(())
+    }
+}
 
 pub struct ApplicationHook;
 
@@ -56,8 +77,12 @@ pub(crate) async fn tell(tx: &mut Tx, tenant: Uuid, email: Option<&str>, title: 
     Ok(())
 }
 
-/// A type's review stages, in order: (stage, role, inspection).
-fn stages(kind: &Doc) -> Vec<(String, Option<String>, bool)> {
+/// A review stage: its name, role, whether it is a site inspection, and whether it is passed
+/// alongside the stage before.
+type Stage = (String, Option<String>, bool, bool);
+
+/// A type's review stages, in order.
+fn stages(kind: &Doc) -> Vec<Stage> {
     rows(kind, "stages")
         .iter()
         .filter_map(|r| {
@@ -65,9 +90,41 @@ fn stages(kind: &Doc) -> Vec<(String, Option<String>, bool)> {
                 s(r, "stage")?.to_string(),
                 s(r, "role").map(str::trim).filter(|x| !x.is_empty()).map(str::to_string),
                 r.get("inspection").and_then(Value::as_bool).unwrap_or(false),
+                r.get("alongside").and_then(Value::as_bool).unwrap_or(false),
             ))
         })
         .collect()
+}
+
+/// The stages in their groups, by index: a stage alongside the one before joins its group, and a
+/// group's stages are passed in any order.
+fn groups(all: &[Stage]) -> Vec<Vec<usize>> {
+    let mut out: Vec<Vec<usize>> = Vec::new();
+    for (i, st) in all.iter().enumerate() {
+        match out.last_mut() {
+            Some(g) if st.3 => g.push(i),
+            _ => out.push(vec![i]),
+        }
+    }
+    out
+}
+
+/// The stages passed, by name.
+fn passed(reviews: &[Doc]) -> HashSet<String> {
+    reviews.iter().filter(|r| s(r, "outcome") == Some("Passed")).filter_map(|r| s(r, "stage").map(str::to_string)).collect()
+}
+
+/// The first group with a stage not passed yet, and those stages: what an application waits for.
+fn open(all: &[Stage], done: &HashSet<String>) -> Option<(usize, Vec<usize>)> {
+    groups(all).into_iter().enumerate().find_map(|(g, at)| {
+        let left: Vec<usize> = at.into_iter().filter(|&i| !done.contains(&all[i].0)).collect();
+        (!left.is_empty()).then_some((g, left))
+    })
+}
+
+/// The names of `at`'s stages, as "Waiting For" says them.
+fn names(all: &[Stage], at: &[usize]) -> String {
+    at.iter().map(|&i| all[i].0.as_str()).collect::<Vec<_>>().join(", ")
 }
 
 /// A review row as its table keeps it: its fields and id only.
@@ -170,22 +227,45 @@ impl DocHook for ApplicationHook {
             }
             "take_up" => {
                 let kind = type_of(hc, doc).await?;
-                json!({"status": "Under Review", "officer": hc.ctx.email, "stage": stages(&kind).first().map(|st| st.0.clone())})
+                let all = stages(&kind);
+                json!({"status": "Under Review", "officer": hc.ctx.email, "stage": open(&all, &HashSet::new()).map(|(_, left)| names(&all, &left))})
             }
             "pass_stage" => {
                 let kind = type_of(hc, doc).await?;
                 let all = stages(&kind);
                 let mut reviews: Vec<Doc> = rows(doc, "reviews").iter().map(review_row).collect();
-                let passed = reviews.iter().filter(|r| s(r, "outcome") == Some("Passed")).count();
-                let (stage, role, inspection) = all.get(passed).cloned().ok_or_else(|| Error::invalid("every stage is passed: approve it"))?;
+                let mut done = passed(&reviews);
+                let (group, left) = open(&all, &done).ok_or_else(|| Error::invalid("every stage is passed: approve it"))?;
+                let may = |i: usize| all[i].1.as_ref().is_none_or(|role| hc.ctx.is_admin || hc.ctx.roles.iter().any(|r| r == role));
+                // The stage named, else the first the caller may pass: side by side, each their own.
+                let pick = match params.get("stage").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()) {
+                    Some(n) => left
+                        .iter()
+                        .copied()
+                        .find(|&i| all[i].0 == n)
+                        .ok_or_else(|| Error::field("stage", format!("is not one it waits for: {}", names(&all, &left))))?,
+                    None => left.iter().copied().find(|&i| may(i)).unwrap_or(left[0]),
+                };
+                let (stage, role, inspection, _) = all[pick].clone();
                 if let Some(role) = &role
-                    && !hc.ctx.is_admin
-                    && !hc.ctx.roles.iter().any(|r| r == role)
+                    && !may(pick)
                 {
                     return Err(Error::Forbidden(format!("{stage}: a {role} passes it")));
                 }
-                if reviews.last().and_then(|r| s(r, "reviewer")).is_some_and(|by| by.eq_ignore_ascii_case(&hc.ctx.email)) {
+                // Never by whoever passed the stage before, nor by whoever passed a stage beside it.
+                let by_me = |of: &[usize]| {
+                    reviews.iter().any(|r| {
+                        s(r, "outcome") == Some("Passed")
+                            && s(r, "reviewer").is_some_and(|by| by.eq_ignore_ascii_case(&hc.ctx.email))
+                            && s(r, "stage").is_some_and(|st| of.iter().any(|&i| all[i].0 == st))
+                    })
+                };
+                let grouped = groups(&all);
+                if group > 0 && by_me(&grouped[group - 1]) {
                     return Err(Error::Forbidden(format!("{stage}: someone other than whoever passed the stage before passes it")));
+                }
+                if by_me(&grouped[group]) {
+                    return Err(Error::Forbidden(format!("{stage}: someone other than whoever passed a stage beside it passes it")));
                 }
                 let findings = params.get("findings").and_then(Value::as_str).map(str::trim).filter(|f| !f.is_empty()).map(str::to_string);
                 if inspection && findings.is_none() {
@@ -194,11 +274,13 @@ impl DocHook for ApplicationHook {
                 reviews.push(obj(json!({"id": Uuid::now_v7().to_string(), "stage": stage, "outcome": "Passed", "reviewer": hc.ctx.email.to_lowercase(),
                                         "reviewed_on": today.to_string(), "note": note(params), "findings": findings})));
                 hc.kernel.set_child_rows_tx(&system, hc.tx, "PermitApplication", "reviews", application, reviews).await?;
-                json!({"status": "Under Review", "stage": all.get(passed + 1).map(|st| st.0.clone())})
+                done.insert(stage);
+                json!({"status": "Under Review", "stage": open(&all, &done).map(|(_, left)| names(&all, &left))})
             }
             "approve" => {
                 if let Some(stage) = s(doc, "stage").filter(|st| !st.is_empty()) {
-                    return Err(Error::invalid(format!("{stage} is not passed yet")));
+                    let are = if stage.contains(", ") { "are" } else { "is" };
+                    return Err(Error::invalid(format!("{stage} {are} not passed yet")));
                 }
                 if let Some(inv) = id(doc, "fee_invoice") {
                     let paid: Option<bool> = sqlx::query_scalar(
@@ -226,11 +308,20 @@ impl DocHook for ApplicationHook {
             }
             "reject" => {
                 let why = note(params).ok_or_else(|| Error::field("note", "a rejection says why"))?;
-                // A stage it waited for failed with it.
-                if let Some(stage) = s(doc, "stage").filter(|st| !st.is_empty()) {
+                // The stages it waited for failed with it.
+                if let Some(stage) = s(doc, "stage").filter(|st| !st.is_empty()).map(str::to_string) {
+                    let kind = type_of(hc, doc).await?;
+                    let all = stages(&kind);
                     let mut reviews: Vec<Doc> = rows(doc, "reviews").iter().map(review_row).collect();
-                    reviews.push(obj(json!({"id": Uuid::now_v7().to_string(), "stage": stage, "outcome": "Failed", "reviewer": hc.ctx.email.to_lowercase(),
-                                            "reviewed_on": today.to_string(), "note": why})));
+                    let failed: Vec<String> = match open(&all, &passed(&reviews)) {
+                        Some((_, left)) => left.iter().map(|&i| all[i].0.clone()).collect(),
+                        None => vec![stage],
+                    };
+                    for stage in failed {
+                        let reviewer = hc.ctx.email.to_lowercase();
+                        let row = json!({"id": Uuid::now_v7().to_string(), "stage": stage, "outcome": "Failed", "reviewer": reviewer, "reviewed_on": today.to_string(), "note": why});
+                        reviews.push(obj(row));
+                    }
                     hc.kernel.set_child_rows_tx(&system, hc.tx, "PermitApplication", "reviews", application, reviews).await?;
                 }
                 tell(

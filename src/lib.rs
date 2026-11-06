@@ -43,6 +43,7 @@ pub fn register(hooks: &mut HookRegistry) {
     hooks
         .register("PermitApplication", Arc::new(permits::ApplicationHook))
         .register("Permit", Arc::new(permits::PermitHook))
+        .register("PermitType", Arc::new(permits::TypeHook))
         .register("PublicCase", Arc::new(cases::CaseHook));
     hooks.add_site("government", Arc::new(site::GovernmentSite));
 }

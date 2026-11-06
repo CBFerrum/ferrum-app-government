@@ -22,6 +22,7 @@
     - {name: stage, type: data, required: true, in_list: true}
     - {name: role, type: data, in_list: true, description: "The role whose people pass it; any permit officer when empty"}
     - {name: inspection, type: check, in_list: true, label: Site Inspection, description: "A visit: what was found is kept with it"}
+    - {name: alongside, type: check, in_list: true, label: Alongside The One Before, description: "Passed side by side with the stage before it, in any order, each by its own people"}
 
 - name: PermitType
   label: Permit Type
@@ -36,7 +37,7 @@
     - {name: fee_item, type: link, to: Item, description: "The settings' when empty"}
     - {name: valid_months, type: int, required: true, default: 12, in_list: true}
     - {name: documents, type: table, of: PermitDocument, label: Documents Needed}
-    - {name: stages, type: table, of: PermitStage, label: Review Stages, description: "Passed in order, each by someone holding its role and never by whoever passed the stage before; none: one officer decides"}
+    - {name: stages, type: table, of: PermitStage, label: Review Stages, description: "Passed in order, each by someone holding its role and never by whoever passed the stage before; a stage alongside the one before is passed side by side with it, in any order, by someone else; none: one officer decides"}
     - {name: renewable, type: check, default: false, description: "Its permits may be renewed, from Renew Within days before they expire"}
     - {name: renew_within_days, type: int, default: 60, label: Renew Within (Days)}
     - {name: in_register, type: check, default: false, label: On The Public Register, description: "Its permits, with their holders' names and conditions, are published in the public register"}
@@ -91,7 +92,8 @@
     - {name: submit_application, label: Submit It, permission: write, condition: "doc.status == 'Draft'"}
     - {name: take_up, label: Take It Up, permission: write, condition: "doc.status == 'Submitted'"}
     - {name: pass_stage, label: Pass This Stage, permission: write, condition: "doc.status == 'Under Review' && doc.stage != null && doc.stage != ''",
-       params: [{name: note, type: text, label: Note}, {name: findings, type: text, label: Findings, description: "What a site inspection found"}]}
+       params: [{name: note, type: text, label: Note}, {name: findings, type: text, label: Findings, description: "What a site inspection found"},
+                {name: stage, type: data, label: Stage, description: "Which, when stages wait side by side and you may pass more than one"}]}
     - {name: approve, label: Approve It, permission: write, condition: "doc.status == 'Under Review'",
        params: [{name: note, type: text, label: Note}, {name: conditions, type: text, label: Conditions, description: "What the permit is issued on condition of"}]}
     - {name: reject, label: Reject It, permission: write, condition: "doc.status == 'Under Review'", params: [{name: note, type: text, label: Why, required: true}]}
