@@ -30,8 +30,10 @@ accessibility law, or a country's e-government standards.
 - **Cases.** A case opens the day it is raised and is due its category's days later. Resolved or
   closed, it says how, and keeps the day. Upkeep marks the open ones past their day overdue.
 - **Stages.** A type's review stages are passed in order, each by someone holding its role and never
-  by whoever passed the one before; a site inspection says what it found. Approval waits for every
-  stage, and may set conditions the permit keeps.
+  by whoever passed the one before; a site inspection says what it found. Stages marked Alongside
+  The One Before are passed side by side, in any order, each by its own people and no one passing
+  two of them; the application waits for all of them before the next stage. Approval waits for
+  every stage, and may set conditions the permit keeps.
 - **Renewals and notices.** A renewable permit is renewed from its type's days before it ends, by the
   officer or on the portal; the new permit runs on from the day after. Applicants are told as their
   application moves, and holders once when their renewal opens.
@@ -56,7 +58,7 @@ cd ui && npm run build && npm run check
 
 ## Not yet
 
-- Stages that run side by side (they run in order), and conditions checked after issue.
+- Conditions checked after issue.
 - Paying the fee on the portal (ERP's invoices page shows what is due), and SMS (notices go by the
   person's own choice of e-mail or the bar).
 - A register of more than its latest 1,000 permits at once, and open data beyond JSON and CSV.
@@ -66,6 +68,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.2.5** | Review stages side by side: passed in any order, each by its own people. |
 | **0.2.4** | Rebuilt with Ferrum-Frontend a64416a: a box whose default is 1 shows ticked. |
 | **0.2.3** | The portal shows a permit type's fee as money, or "no fee". |
 | **0.2.2** | Rebuilt with Ferrum-Frontend 922fcfb: action dialogs say every refusal and ask once. |
