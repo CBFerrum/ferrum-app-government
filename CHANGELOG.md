@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+Found walking the citizens' portal on 7 November: a permit type's fee shows as money, and a type
+with none says "no fee" (it read "fee 0").
+
 ## 0.2.2
 
 Rebuilt with Ferrum-Frontend 922fcfb: an action's dialog says every refusal, the errors on what the action made (another record's rows) among them, and an action with parameters and a confirmation asks once.
