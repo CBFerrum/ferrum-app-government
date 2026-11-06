@@ -238,7 +238,7 @@ impl DocHook for ApplicationHook {
                     hc.ctx.tenant,
                     s(doc, "applicant_email"),
                     &format!("Your application {number} is rejected"),
-                    Some(&why),
+                    Some(why.as_str()),
                     ("PermitApplication", application),
                 )
                 .await?;
