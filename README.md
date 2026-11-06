@@ -66,6 +66,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.2.3** | The portal shows a permit type's fee as money, or "no fee". |
 | **0.2.2** | Rebuilt with Ferrum-Frontend 922fcfb: action dialogs say every refusal and ask once. |
 | **0.2.1** | Rebuilt with Ferrum-Frontend a76295e: times on a person's own clock when they chose one. |
 | **0.2.0** | Review stages with site inspections, conditions, renewals, notices to applicants and holders, a public register, and the workspace's day. |
