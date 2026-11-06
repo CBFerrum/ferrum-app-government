@@ -323,7 +323,7 @@ async fn scenario() {
     // ───────────── reviewed in stages, issued on conditions, told, registered, renewed ─────────────
     // The stages' roles are the workspace's own.
     let rule = |p: Value| serde_json::from_value::<ferrum_meta::PermissionDef>(p).unwrap();
-    for role in ["Planning Officer", "Inspector"] {
+    for role in ["Planning Officer", "Inspector", "Fire Officer", "Health Officer"] {
         t.k.set_role_permission(&a, role, &rule(json!({"entity": "PermitApplication", "read": true}))).await.expect("a role of the workspace's");
     }
     let planner = t.user("planner@town.test", &["Permit Officer", "Planning Officer", "Inspector"]).await;
@@ -431,6 +431,60 @@ async fn scenario() {
     t.act(&planner, "PermitApplication", k2, "reject", json!({"note": "A protected street"})).await.unwrap();
     let failed = t.get("PermitApplication", k2).await;
     assert_eq!((failed["status"].as_str(), failed["reviews"][0]["outcome"].as_str()), (Some("Rejected"), Some("Failed")));
+    // Stages side by side: fire safety and health together, in any order, each by its own people
+    // and no one passing both; then a final review.
+    refused(
+        t.k.insert(
+            &manager,
+            "PermitType",
+            obj(json!({"type_name": "Twice", "valid_months": 1, "stages": [{"stage": "Check"}, {"stage": "check", "alongside": true}]})),
+        )
+        .await,
+        "invalid",
+        "two stages are called check",
+    );
+    let market = uid(&t
+        .insert(
+            &manager,
+            "PermitType",
+            json!({"type_name": "Fair Stall", "fee": "0", "valid_months": 1,
+                   "stages": [{"stage": "Fire safety", "role": "Fire Officer"}, {"stage": "Health check", "role": "Health Officer", "alongside": true},
+                              {"stage": "Final review", "role": "Planning Officer"}]}),
+        )
+        .await["id"]);
+    let health = t.user("health@town.test", &["Permit Officer", "Health Officer"]).await;
+    let both = t.user("both@town.test", &["Permit Officer", "Fire Officer", "Health Officer"]).await;
+    let lee = t.citizen("lee@home.test", "Lee Park").await;
+    // Two applications for a stall, submitted.
+    let mut stalls = vec![];
+    for _ in 0..2 {
+        let m = uid(&call(&k, Some(&lee), "POST", "portal/applications", json!({"permit_type": market.to_string()})).await.unwrap()["id"]);
+        call(&k, Some(&lee), "POST", &format!("portal/applications/{m}/submit"), json!({})).await.unwrap();
+        stalls.push(m);
+    }
+    let (m1, m2) = (stalls[0], stalls[1]);
+    t.act(&officer, "PermitApplication", m1, "take_up", Value::Null).await.unwrap();
+    assert_eq!(t.get("PermitApplication", m1).await["stage"], "Fire safety, Health check", "waiting for both at once");
+    refused(t.act(&officer, "PermitApplication", m1, "approve", Value::Null).await, "invalid", "Fire safety, Health check are not passed yet");
+    // Health first, though it comes second: each passes their own.
+    t.act(&health, "PermitApplication", m1, "pass_stage", json!({"note": "Clean"})).await.expect("health passed");
+    assert_eq!(t.get("PermitApplication", m1).await["stage"], "Fire safety");
+    refused(t.act(&health, "PermitApplication", m1, "pass_stage", Value::Null).await, "forbidden", "Fire safety: a Fire Officer passes it");
+    refused(t.act(&both, "PermitApplication", m1, "pass_stage", json!({"stage": "Health check"})).await, "invalid", "is not one it waits for: Fire safety");
+    t.act(&both, "PermitApplication", m1, "pass_stage", Value::Null).await.expect("fire passed");
+    assert_eq!(t.get("PermitApplication", m1).await["stage"], "Final review", "the group done, the next stage");
+    // Someone who may pass both passes one; a rejection fails what it still waited for.
+    t.act(&officer, "PermitApplication", m2, "take_up", Value::Null).await.unwrap();
+    t.act(&both, "PermitApplication", m2, "pass_stage", json!({"stage": "Health check"})).await.expect("one of the two");
+    refused(t.act(&both, "PermitApplication", m2, "pass_stage", Value::Null).await, "forbidden", "someone other than whoever passed a stage beside it");
+    t.act(&officer, "PermitApplication", m2, "reject", json!({"note": "No stalls this season"})).await.unwrap();
+    let outcomes: Vec<(String, String)> = t.get("PermitApplication", m2).await["reviews"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["stage"].as_str().unwrap().into(), r["outcome"].as_str().unwrap().into()))
+        .collect();
+    assert_eq!(outcomes, [("Health check", "Passed"), ("Fire safety", "Failed")].map(|(a, b)| (a.to_string(), b.to_string())).to_vec());
 
     // ───────────── cases ─────────────
     let raised = call(&k, Some(&ria), "POST", "portal/cases", json!({"category": potholes.to_string(), "subject": "Pothole on Mill Lane"})).await.unwrap();
