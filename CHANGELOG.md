@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.6
+
+Rebuilt with Ferrum-Frontend 63280d3: right to left, its pages mirror as they read (icons that point along the line, margins and alignment by the line's start and end, arrow keys along it), and the records pages' words are in Arabic and Hindi.
+
 ## 0.2.5
 
 Review stages side by side. A stage marked Alongside The One Before is passed side by side with it,
