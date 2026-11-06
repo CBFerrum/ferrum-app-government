@@ -1,6 +1,6 @@
 id: government
 name: Government
-version: 0.1.7
+version: 0.1.8
 publisher: cbferrum
 summary: "Permits applied for, reviewed, paid through ERP and issued with their expiry, cases with deadlines, and a citizens' portal"
 description: README.md
