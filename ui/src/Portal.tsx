@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { api, errorMessage } from "@ferrum/client";
+import { api, errorMessage, todayIso } from "@ferrum/client";
 import { Badge, Button, ErrorState, Field, PageLoading, statusTone, toast, useShellTitle } from "@ferrum/kit";
 
 const BASE = "/api/app/government/portal";
@@ -29,12 +29,33 @@ export interface Application {
   fee_invoice?: string | null;
   fee_drafted?: boolean;
   decision_note?: string | null;
+  stage?: string | null;
+  conditions?: string | null;
+  renewal_of?: string | null;
+  reviews?: { stage?: string | null; outcome?: string | null; reviewed_on?: string | null; findings?: string | null }[];
+}
+
+export interface PortalPermit {
+  id: string;
+  number?: string;
+  permit_type?: string;
+  expires_on?: string;
+  status?: string;
+  conditions?: string | null;
+  /** From when it may be renewed, for a type that renews; none otherwise. */
+  renew_from?: string | null;
+  renewal?: string | null;
+}
+
+/** Whether a permit may be renewed from the portal on `today`: its type renews, its window is open, and no renewal is under way. */
+export function canRenew(p: PortalPermit, today: string): boolean {
+  return !!p.renew_from && p.renew_from <= today && !p.renewal;
 }
 
 interface Services {
   types: PermitType[];
   applications: Application[];
-  permits: { id: string; number?: string; permit_type?: string; expires_on?: string; status?: string }[];
+  permits: PortalPermit[];
   cases: { id: string; number?: string; subject?: string; status?: string; due_on?: string; resolution?: string | null }[];
   categories: { id: string; category_name: string }[];
 }
@@ -120,6 +141,18 @@ export function PortalServices() {
               <Badge tone={statusTone(a.status)}>{a.status}</Badge>
             </header>
             {a.decision_note && <p>{a.decision_note}</p>}
+            {a.status === "Under Review" && a.stage && <p className="muted">Waiting for: {a.stage}</p>}
+            {(a.reviews ?? []).length > 0 && (
+              <ul className="stack">
+                {(a.reviews ?? []).map((r, i) => (
+                  <li key={i}>
+                    {r.stage} · {r.outcome} · {r.reviewed_on}
+                    {r.findings ? ` · found: ${r.findings}` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {a.conditions && <p>On condition: {a.conditions}</p>}
             {a.fee_invoice && <a href={`/portal/invoices/${a.fee_invoice}`}>The fee's invoice</a>}
             {a.fee_drafted && <p className="muted">The fee's invoice is not issued yet.</p>}
             {a.status === "Draft" && (
@@ -159,8 +192,19 @@ export function PortalServices() {
           <h3>Your permits</h3>
           <ul className="stack">
             {permits.map((p) => (
-              <li key={p.id}>
-                {p.number} · {typeOf(p.permit_type)?.type_name ?? ""} · until {p.expires_on} <Badge tone={statusTone(p.status)}>{p.status}</Badge>
+              <li key={p.id} className="stack" style={{ gap: 4 }}>
+                <span>
+                  {p.number} · {typeOf(p.permit_type)?.type_name ?? ""} · until {p.expires_on} <Badge tone={statusTone(p.status)}>{p.status}</Badge>
+                </span>
+                {p.conditions && <span className="muted">On condition: {p.conditions}</span>}
+                {canRenew(p, todayIso()) && (
+                  <span>
+                    <Button loading={busy === `renew-${p.id}`} onClick={() => void run(`renew-${p.id}`, () => api.post(`${BASE}/permits/${p.id}/renew`, {}), "Renewal started")}>
+                      Renew it
+                    </Button>
+                  </span>
+                )}
+                {!canRenew(p, todayIso()) && p.renew_from && !p.renewal && <span className="muted">It may be renewed from {p.renew_from}.</span>}
               </li>
             ))}
           </ul>

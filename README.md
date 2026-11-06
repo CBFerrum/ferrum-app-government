@@ -29,6 +29,14 @@ accessibility law, or a country's e-government standards.
   permit expires by itself, or is revoked saying why.
 - **Cases.** A case opens the day it is raised and is due its category's days later. Resolved or
   closed, it says how, and keeps the day. Upkeep marks the open ones past their day overdue.
+- **Stages.** A type's review stages are passed in order, each by someone holding its role and never
+  by whoever passed the one before; a site inspection says what it found. Approval waits for every
+  stage, and may set conditions the permit keeps.
+- **Renewals and notices.** A renewable permit is renewed from its type's days before it ends, by the
+  officer or on the portal; the new permit runs on from the day after. Applicants are told as their
+  application moves, and holders once when their renewal opens.
+- **The public register.** The permits of the types published on it, with holder, days, status and
+  conditions, at `/api/site/{workspace}/government/register` (JSON, or CSV with `format=csv`).
 - **Your services.** A citizen sees only their own applications, permits and cases, with the fee's
   invoice opening on ERP's "Your invoices".
 
@@ -48,16 +56,17 @@ cd ui && npm run build && npm run check
 
 ## Not yet
 
-- Several reviewers or stages, site inspections, and conditions on a permit.
-- Renewing a permit, and paying the fee on the portal (ERP's invoices page shows what is due).
-- Notifying citizens by mail or SMS as their application moves.
-- A public register of permits, and open data.
+- Stages that run side by side (they run in order), and conditions checked after issue.
+- Paying the fee on the portal (ERP's invoices page shows what is due), and SMS (notices go by the
+  person's own choice of e-mail or the bar).
+- A register of more than its latest 1,000 permits at once, and open data beyond JSON and CSV.
 - Any claim to meet public-sector rules (BLOCK-LEGAL-REVIEW).
 
 ## Changelog
 
 | Version | Highlights |
 |---|---|
+| **0.2.0** | Review stages with site inspections, conditions, renewals, notices to applicants and holders, a public register, and the workspace's day. |
 | **0.1.8** | Rebuilt with Ferrum-Frontend 24c3951: times on the workspace's clock; drafts headed as drafts. |
 | **0.1.7** | Rebuilt with Ferrum-Frontend bb60115: empty numbers read as the server reads them; settings open as their record. |
 | **0.1.6** | Rebuilt with Ferrum-Frontend 00dea07: a workflow state's kept fields are read-only, its needed ones required. |
