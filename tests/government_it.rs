@@ -323,7 +323,7 @@ async fn scenario() {
     // ───────────── reviewed in stages, issued on conditions, told, registered, renewed ─────────────
     // The stages' roles are the workspace's own.
     let rule = |p: Value| serde_json::from_value::<ferrum_meta::PermissionDef>(p).unwrap();
-    for role in ["Planning Officer", "Inspector"] {
+    for role in ["Planning Officer", "Inspector", "Fire Officer", "Health Officer"] {
         t.k.set_role_permission(&a, role, &rule(json!({"entity": "PermitApplication", "read": true}))).await.expect("a role of the workspace's");
     }
     let planner = t.user("planner@town.test", &["Permit Officer", "Planning Officer", "Inspector"]).await;
