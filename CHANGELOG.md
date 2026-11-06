@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+Rebuilt with Ferrum-Frontend a76295e: its pages show times on a person's own clock when they chose one on their Account page, while today and due dates stay on the workspace's day.
+
 ## 0.2.0
 
 Stages, conditions, renewals, notices and the public register (FERRUM-INDUSTRY-010).
