@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.0
+
+Stages, conditions, renewals, notices and the public register (FERRUM-INDUSTRY-010).
+
+- **Review stages** on a permit type, each with the role whose people pass it and whether it is a
+  site inspection. Taken up, an application waits for its first stage. Each stage is passed in order
+  by someone holding its role (any permit officer when it names none), never by whoever passed the
+  stage before. An inspection says what it found. It is approved once every stage is passed (and
+  its fee paid), and a rejection while it waits records the stage as failed. Its reviews are kept,
+  and the citizen sees them.
+- **Conditions:** an approval may set what the permit is issued on condition of. The permit keeps
+  them, and the citizen and the register show them.
+- **Renewals:** a renewable type's permits are renewed from its days before they end, by the
+  officer or by the holder on the portal, as an application of its own. The permit issued for it
+  runs on from the day after the old one ends. Upkeep tells the holder once when their renewal
+  opens.
+- **Notices:** the applicant is told when their application is submitted, approved, rejected or
+  issued, by e-mail unless they choose otherwise ("Your applications and permits").
+- **The public register:** `/api/site/{workspace}/government/register`, without sign-in, lists the
+  permits of the types marked On The Public Register, with holder, days, status and conditions, as
+  JSON or CSV (`format=csv`), filtered by `type`.
+- **The workspace's day:** submissions, decisions, permits, cases and upkeep go by each workspace's
+  own day, not UTC's.
+
 ## 0.1.8
 
 Rebuilt with Ferrum-Frontend 24c3951: its pages show times on the workspace's clock, naming the zone when it is not the browser's, a draft numbered on submit is headed as a draft, and a record of an app that is not installed says so.
