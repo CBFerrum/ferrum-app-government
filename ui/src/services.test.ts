@@ -17,3 +17,14 @@ describe("queues and services", () => {
     expect(stillNeeded(["Site plan", "ID", "Fire report"], app)).toEqual(["ID", "Fire report"]);
   });
 });
+
+describe("renewing a permit", () => {
+  it("is offered once its window opens, and not while a renewal is under way", async () => {
+    const { canRenew } = await import("./Portal");
+    const p = { id: "p", renew_from: "2027-01-30" };
+    expect(canRenew(p, "2027-01-29")).toBe(false);
+    expect(canRenew(p, "2027-01-30")).toBe(true);
+    expect(canRenew({ ...p, renewal: "a" }, "2027-02-10")).toBe(false);
+    expect(canRenew({ id: "q" }, "2027-02-10")).toBe(false);
+  });
+});

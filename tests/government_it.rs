@@ -3,7 +3,11 @@
 //! reset first): a citizen on the portal applies for a permit, uploads the documents it needs and
 //! submits it, its fee invoiced through ERP; an officer takes it up, approves it once the fee is
 //! paid and issues a permit valid for its months; a rejection says why; a permit is revoked saying
-//! why, and expires by itself; cases are due within their category's days, resolved saying how and
+//! why, and expires by itself; a kiosk reviewed in two stages by people holding their roles, never
+//! the same person twice running, its site visit saying what it found, approved on conditions,
+//! its applicant told at each step, on the public register (JSON and CSV), its holder told once
+//! that it may be renewed and renewing it on the portal, the renewal running on from the day after;
+//! a failed stage rejecting; cases are due within their category's days, resolved saying how and
 //! marked overdue when late; a citizen sees only what is theirs; and who may do what.
 
 use ferrum_kernel::secret::SecretKey;
@@ -81,6 +85,23 @@ impl T {
     }
 }
 
+/// Government's public register as anyone (`/api/site/{workspace}/government/register`), with `query`.
+async fn register(k: &Kernel, tenant: Uuid, query: Value) -> Result<(String, String), Error> {
+    let site = k.hooks.site("government").expect("government's endpoints").clone();
+    let req = ferrum_kernel::SiteRequest {
+        tenant,
+        user: None,
+        method: "GET".into(),
+        path: "/register".into(),
+        query: query.as_object().cloned().unwrap_or_default(),
+        headers: Default::default(),
+        body: vec![],
+        client_ip: "203.0.113.10".into(),
+    };
+    let r = site.handle(k, req).await?;
+    Ok((r.content_type, String::from_utf8(r.body).unwrap()))
+}
+
 /// A call to Government's endpoints as `who` (`/api/app/government/{path}`).
 async fn call(k: &Kernel, who: Option<&Ctx>, method: &str, path: &str, body: Value) -> Result<Value, Error> {
     let site = k.hooks.site("government").expect("government's endpoints").clone();
@@ -146,7 +167,8 @@ async fn scenario() {
     let admin = k.load_ctx(tenant, session.user, Some(session.token_version), "it".into()).await.expect("ctx");
     let t = T { k: k.clone(), tenant, admin };
     let a = t.admin.clone();
-    let today = chrono::Utc::now().date_naive();
+    // The workspace's day, in Asia/Kolkata (UTC+5:30 all year).
+    let today = (chrono::Utc::now() + chrono::Duration::minutes(330)).date_naive();
 
     // ───────────── the books, the permits and the categories ─────────────
     let inr = t.find_one("Currency", json!({"code": "INR"})).await;
@@ -297,6 +319,118 @@ async fn scenario() {
     assert_eq!(t.get("Permit", uid(&permit["id"])).await["status"], "Valid", "the building permit runs two years");
     t.act(&officer, "Permit", uid(&permit["id"]), "revoke", json!({"reason": "Built beyond the plan"})).await.unwrap();
     assert_eq!(t.get("Permit", uid(&permit["id"])).await["status"], "Revoked");
+
+    // ───────────── reviewed in stages, issued on conditions, told, registered, renewed ─────────────
+    // The stages' roles are the workspace's own.
+    let rule = |p: Value| serde_json::from_value::<ferrum_meta::PermissionDef>(p).unwrap();
+    for role in ["Planning Officer", "Inspector"] {
+        t.k.set_role_permission(&a, role, &rule(json!({"entity": "PermitApplication", "read": true}))).await.expect("a role of the workspace's");
+    }
+    let planner = t.user("planner@town.test", &["Permit Officer", "Planning Officer", "Inspector"]).await;
+    let inspector = t.user("inspector@town.test", &["Permit Officer", "Inspector"]).await;
+    let kim = t.citizen("kim@home.test", "Kim Roy").await;
+    let kiosk = uid(&t
+        .insert(
+            &manager,
+            "PermitType",
+            json!({"type_name": "Kiosk", "fee": "0", "valid_months": 1, "renewable": true, "renew_within_days": 60, "in_register": true,
+                   "stages": [{"stage": "Planning review", "role": "Planning Officer"}, {"stage": "Site visit", "role": "Inspector", "inspection": true}]}),
+        )
+        .await["id"]);
+    let k1 =
+        uid(&call(&k, Some(&kim), "POST", "portal/applications", json!({"permit_type": kiosk.to_string(), "details": "A coffee kiosk"})).await.unwrap()["id"]);
+    call(&k, Some(&kim), "POST", &format!("portal/applications/{k1}/submit"), json!({})).await.unwrap();
+    t.act(&officer, "PermitApplication", k1, "take_up", Value::Null).await.unwrap();
+    assert_eq!(t.get("PermitApplication", k1).await["stage"], "Planning review");
+    refused(t.act(&officer, "PermitApplication", k1, "approve", Value::Null).await, "invalid", "Planning review is not passed yet");
+    refused(t.act(&inspector, "PermitApplication", k1, "pass_stage", Value::Null).await, "forbidden", "a Planning Officer passes it");
+    t.act(&planner, "PermitApplication", k1, "pass_stage", json!({"note": "Fits the plan"})).await.expect("planning passed");
+    assert_eq!(t.get("PermitApplication", k1).await["stage"], "Site visit");
+    refused(t.act(&planner, "PermitApplication", k1, "pass_stage", json!({"findings": "Fine"})).await, "forbidden", "someone other than");
+    refused(t.act(&inspector, "PermitApplication", k1, "pass_stage", Value::Null).await, "invalid", "says what it found");
+    t.act(&inspector, "PermitApplication", k1, "pass_stage", json!({"findings": "Clear pavement, 2 m from the kerb"})).await.expect("visited");
+    let reviewed = t.get("PermitApplication", k1).await;
+    let reviews: Vec<(String, String, String)> = reviewed["reviews"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["stage"].as_str().unwrap().into(), r["outcome"].as_str().unwrap().into(), r["reviewer"].as_str().unwrap().into()))
+        .collect();
+    assert_eq!(
+        reviews,
+        [("Planning review", "Passed", "planner@town.test"), ("Site visit", "Passed", "inspector@town.test")]
+            .map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string()))
+            .to_vec()
+    );
+    assert!(reviewed["stage"].is_null(), "every stage passed");
+    t.act(&officer, "PermitApplication", k1, "approve", json!({"conditions": "Closed by 22:00"})).await.expect("approved");
+    let kiosk_permit = uid(&t.act(&officer, "PermitApplication", k1, "issue", Value::Null).await.unwrap()["permit"]["id"]);
+    let kp = t.get("Permit", kiosk_permit).await;
+    assert_eq!(kp["conditions"], "Closed by 22:00");
+    // Kim was told at each step, by e-mail unless she chose otherwise.
+    let told = |record: Uuid| {
+        let k = k.clone();
+        async move {
+            let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+            let titles: Vec<String> = sqlx::query_scalar(
+                "select n.title from notification n join app_user u on u.tenant_id = n.tenant_id and u.id = n.user_id \
+                 where n.tenant_id = $1 and n.record_id = $2 and n.kind = 'government.application' and u.email = 'kim@home.test' order by n.created_at, n.id",
+            )
+            .bind(tenant)
+            .bind(record)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+            titles
+        }
+    };
+    let k1_titles = told(k1).await;
+    assert_eq!(k1_titles.len(), 3, "{k1_titles:?}");
+    assert!(k1_titles[0].ends_with("is submitted") && k1_titles[1].ends_with("is approved") && k1_titles[2].contains("is issued"), "{k1_titles:?}");
+    // On the public register, with its holder and conditions; a type not on it is not.
+    let (ctype, body) = register(&k, tenant, json!({})).await.expect("the register");
+    let listed: Value = serde_json::from_str(&body).unwrap();
+    let permits = listed["permits"].as_array().unwrap();
+    assert!(ctype.starts_with("application/json") && permits.len() == 1, "{listed}");
+    assert_eq!((permits[0]["holder"].as_str(), permits[0]["conditions"].as_str()), (Some("Kim Roy"), Some("Closed by 22:00")));
+    let (ctype, csv) = register(&k, tenant, json!({"format": "csv", "type": "kiosk"})).await.unwrap();
+    assert!(ctype.starts_with("text/csv") && csv.starts_with("number,permit_type,holder,") && csv.contains("Kim Roy"), "{csv}");
+    let off: Value = serde_json::from_str(&register(&k, tenant, json!({"type": "Building permit"})).await.unwrap().1).unwrap();
+    assert!(off["permits"].as_array().unwrap().is_empty(), "a type not on the register: {off}");
+    // A month's permit renews from sixty days before its end: Kim is told once, and renews it.
+    ferrum_app_government::maintenance_on(&k, today).await.unwrap();
+    ferrum_app_government::maintenance_on(&k, today).await.unwrap();
+    assert_eq!(told(kiosk_permit).await.len(), 1, "told once that it may be renewed");
+    let mine = call(&k, Some(&kim), "GET", "portal/home", Value::Null).await.unwrap();
+    assert_eq!(
+        mine["permits"][0]["renew_from"],
+        (chrono::NaiveDate::parse_from_str(kp["expires_on"].as_str().unwrap(), "%Y-%m-%d").unwrap() - chrono::Duration::days(60)).to_string()
+    );
+    refused(call(&k, Some(&ria), "POST", &format!("portal/permits/{kiosk_permit}/renew"), json!({})).await, "not found", "permit");
+    let renewal = call(&k, Some(&kim), "POST", &format!("portal/permits/{kiosk_permit}/renew"), json!({})).await.expect("a renewal");
+    assert_eq!((renewal["status"].as_str(), renewal["renewal_of"].as_str()), (Some("Draft"), Some(kiosk_permit.to_string().as_str())));
+    refused(call(&k, Some(&kim), "POST", &format!("portal/permits/{kiosk_permit}/renew"), json!({})).await, "invalid", "its renewal is APP-");
+    let r1 = uid(&renewal["id"]);
+    call(&k, Some(&kim), "POST", &format!("portal/applications/{r1}/submit"), json!({})).await.unwrap();
+    t.act(&officer, "PermitApplication", r1, "take_up", Value::Null).await.unwrap();
+    t.act(&planner, "PermitApplication", r1, "pass_stage", Value::Null).await.unwrap();
+    t.act(&inspector, "PermitApplication", r1, "pass_stage", json!({"findings": "As before"})).await.unwrap();
+    t.act(&officer, "PermitApplication", r1, "approve", json!({"conditions": "Closed by 22:00"})).await.unwrap();
+    let next = t.get("Permit", uid(&t.act(&officer, "PermitApplication", r1, "issue", Value::Null).await.unwrap()["permit"]["id"])).await;
+    let day_after = chrono::NaiveDate::parse_from_str(kp["expires_on"].as_str().unwrap(), "%Y-%m-%d").unwrap() + chrono::Duration::days(1);
+    assert_eq!(
+        (next["issued_on"].as_str(), next["renewal_of"].as_str()),
+        (Some(day_after.to_string().as_str()), Some(kiosk_permit.to_string().as_str())),
+        "it runs on from the day after the old one ends"
+    );
+    // A stage that fails rejects the application, saying why.
+    let k2 = uid(&call(&k, Some(&kim), "POST", "portal/applications", json!({"permit_type": kiosk.to_string()})).await.unwrap()["id"]);
+    call(&k, Some(&kim), "POST", &format!("portal/applications/{k2}/submit"), json!({})).await.unwrap();
+    t.act(&officer, "PermitApplication", k2, "take_up", Value::Null).await.unwrap();
+    t.act(&planner, "PermitApplication", k2, "reject", json!({"note": "A protected street"})).await.unwrap();
+    let failed = t.get("PermitApplication", k2).await;
+    assert_eq!((failed["status"].as_str(), failed["reviews"][0]["outcome"].as_str()), (Some("Rejected"), Some("Failed")));
 
     // ───────────── cases ─────────────
     let raised = call(&k, Some(&ria), "POST", "portal/cases", json!({"category": potholes.to_string(), "subject": "Pothole on Mill Lane"})).await.unwrap();

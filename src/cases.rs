@@ -3,7 +3,7 @@
 
 use crate::obj;
 use async_trait::async_trait;
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{Duration, NaiveDate};
 use ferrum_domain::util::{id, s};
 use ferrum_kernel::{Ctx, Doc, DocHook, Error, HookCtx, Kernel, Result, Tx};
 use serde_json::{Value, json};
@@ -26,7 +26,7 @@ impl DocHook for CaseHook {
     }
 
     async fn before_validate(&self, hc: &mut HookCtx<'_>, doc: &mut Doc) -> Result<()> {
-        let today = Utc::now().date_naive();
+        let today = hc.ctx.today();
         let opened = day(doc, "opened_on").unwrap_or(today);
         let days: Option<i64> = sqlx::query_scalar("select days_to_resolve from e_case_category where tenant_id = $1 and id = $2")
             .bind(hc.ctx.tenant)

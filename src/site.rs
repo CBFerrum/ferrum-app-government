@@ -1,14 +1,23 @@
 //! Government's page of the workspace's portal (Ferrum docs/plan/apps-ui.md §9.1), "Your services"
 //! at `/portal/services/`, from `/api/app/government/portal/…`: the permits one may apply for, a
-//! citizen's own applications, permits and cases, an application drafted, its documents uploaded
-//! and submitted, and a case raised. Portal people hold no roles: what is theirs is what carries
-//! the address they signed in with, and what they do runs as the system after these checks.
+//! citizen's own applications (with their review stages and conditions), permits (renewed from
+//! here once their renewal opens) and cases, an application drafted, its documents uploaded and
+//! submitted, and a case raised. Portal people hold no roles: what is theirs is what carries the
+//! address they signed in with, and what they do runs as the system after these checks.
+//!
+//! The public register, `/api/site/{workspace}/government/register?type=&format=json|csv`, needs no
+//! sign-in: the permits of the types on it, with their holders, days, status and conditions.
 
 use base64::Engine;
+use chrono::NaiveDate;
 use ferrum_domain::util::{elevated, id, rows, s, sys};
 use ferrum_kernel::{Ctx, Doc, Error, Filter, Kernel, Result, Site, SiteRequest, SiteResponse, Tx, with_retry};
 use serde_json::{Map, Value, json};
+use std::collections::HashMap;
 use uuid::Uuid;
+
+/// The most permits the register gives at once.
+const REGISTER: i64 = 1000;
 
 /// The largest request: a document of up to [`MAX_FILE`] bytes, as base64.
 const MAX_BODY: usize = 8 << 20;
@@ -19,6 +28,9 @@ pub struct GovernmentSite;
 #[async_trait::async_trait]
 impl Site for GovernmentSite {
     async fn handle(&self, k: &Kernel, req: SiteRequest) -> Result<SiteResponse> {
+        if (req.method.as_str(), req.path.trim_matches('/')) == ("GET", "register") {
+            return register(k, &req).await;
+        }
         let user = req.user.as_ref().ok_or_else(|| Error::Unauthorized("sign in first".into()))?;
         let email = user.email.to_lowercase();
         if email.is_empty() {
@@ -32,6 +44,7 @@ impl Site for GovernmentSite {
             ("POST", ["portal", "applications", a, "submit"]) => (200, act(k, user, &email, application(a)?, "submit_application").await?),
             ("POST", ["portal", "applications", a, "withdraw"]) => (200, act(k, user, &email, application(a)?, "withdraw").await?),
             ("POST", ["portal", "cases"]) => (201, raise(k, user, &email, &body(&req)?).await?),
+            ("POST", ["portal", "permits", p, "renew"]) => (201, renew(k, user, &email, p.parse().map_err(|_| Error::NotFound("permit".into()))?).await?),
             _ => return Err(Error::NotFound(format!("government endpoint {} {}", req.method, req.path))),
         };
         let mut r = SiteResponse::json(status, &out);
@@ -86,7 +99,10 @@ async fn summary(k: &Kernel, sctx: &Ctx, tx: &mut Tx, a: &Doc) -> Result<Value> 
     Ok(json!({"id": s(a, "id"), "number": s(a, "number"), "permit_type": s(a, "permit_type"), "status": s(a, "status"), "details": s(a, "details"),
               "documents": rows(a, "documents").iter().map(|d| json!({"document": s(d, "document"), "file": s(d, "file")})).collect::<Vec<_>>(),
               "fee_invoice": if issued { s(a, "fee_invoice") } else { None }, "fee_drafted": !issued && s(a, "fee_invoice").is_some(),
-              "decision_note": s(a, "decision_note"), "permit": s(a, "permit")}))
+              "decision_note": s(a, "decision_note"), "permit": s(a, "permit"), "stage": s(a, "stage"), "conditions": s(a, "conditions"),
+              "renewal_of": s(a, "renewal_of"),
+              "reviews": rows(a, "reviews").iter().map(|r| json!({"stage": s(r, "stage"), "outcome": s(r, "outcome"), "reviewed_on": s(r, "reviewed_on"),
+                                                               "findings": s(r, "findings")})).collect::<Vec<_>>()}))
 }
 
 /// [`summary`], in a transaction of its own.
@@ -118,11 +134,29 @@ async fn home(k: &Kernel, user: &Ctx, email: &str) -> Result<Value> {
         let doc = k.get_tx(&sctx, &mut tx, "PermitApplication", a, false).await?;
         applications.push(summary(k, &sctx, &mut tx, &doc).await?);
     }
+    // When each type's permits may be renewed: (renewable, days before the end).
+    let renewing: HashMap<Uuid, (bool, i64)> = sqlx::query_as::<_, (Uuid, bool, i64)>(
+        "select id, coalesce(renewable, false), coalesce(renew_within_days, 60)::bigint from e_permit_type where tenant_id = $1",
+    )
+    .bind(user.tenant)
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .map(|(t, r, d)| (t, (r, d)))
+    .collect();
     let permits: Vec<Value> = k
         .find_tx(&sctx, &mut tx, "Permit", &[Filter::eq("holder_email", email)], Some("issued_on desc"), 50)
         .await?
         .iter()
-        .map(|p| json!({"id": s(p, "id"), "number": s(p, "number"), "permit_type": s(p, "permit_type"), "issued_on": s(p, "issued_on"), "expires_on": s(p, "expires_on"), "status": s(p, "status")}))
+        .map(|p| {
+            let ends = s(p, "expires_on").and_then(|v| NaiveDate::parse_from_str(v, "%Y-%m-%d").ok());
+            let renew_from = match (id(p, "permit_type").and_then(|t| renewing.get(&t)), ends, s(p, "status")) {
+                (Some((true, within)), Some(end), Some("Valid" | "Expired")) => Some(crate::permits::renewable_from(end, *within).to_string()),
+                _ => None,
+            };
+            json!({"id": s(p, "id"), "number": s(p, "number"), "permit_type": s(p, "permit_type"), "issued_on": s(p, "issued_on"), "expires_on": s(p, "expires_on"),
+                   "status": s(p, "status"), "conditions": s(p, "conditions"), "renew_from": renew_from, "renewal": s(p, "renewal")})
+        })
         .collect();
     let cases: Vec<Value> = k
         .find_tx(&sctx, &mut tx, "PublicCase", &[Filter::eq("citizen_email", email)], Some("created_at desc"), 50)
@@ -219,4 +253,86 @@ async fn raise(k: &Kernel, user: &Ctx, email: &str, body: &Map<String, Value>) -
     })
     .await?;
     Ok(json!({"id": s(&saved, "id"), "number": s(&saved, "number"), "status": s(&saved, "status"), "due_on": s(&saved, "due_on")}))
+}
+
+/// `POST portal/permits/{id}/renew`: a renewal of the caller's permit, a draft for them to complete.
+async fn renew(k: &Kernel, user: &Ctx, email: &str, permit: Uuid) -> Result<Value> {
+    let sctx = sys(user);
+    let mut tx = k.db.tenant_tx(user.tenant).await?;
+    let p = match k.get_tx(&sctx, &mut tx, "Permit", permit, false).await {
+        Ok(p) => p,
+        Err(Error::NotFound(_)) => return Err(Error::NotFound("permit".into())),
+        Err(e) => return Err(e),
+    };
+    if s(&p, "holder_email").map(str::to_lowercase).as_deref() != Some(email) {
+        return Err(Error::NotFound("permit".into()));
+    }
+    let made = crate::permits::renew(k, &elevated(user), &mut tx, &p, user.today()).await?;
+    let out = summary(k, &sctx, &mut tx, &made).await?;
+    tx.commit().await?;
+    Ok(out)
+}
+
+/// A register cell as CSV: quoted when it must be, and text a spreadsheet would run made plain.
+fn cell(v: &Value) -> String {
+    let text = match v {
+        Value::Null => return String::new(),
+        Value::String(t) => t.clone(),
+        other => other.to_string(),
+    };
+    let text = if text.starts_with(['=', '+', '-', '@', '\t', '\r']) { format!("'{text}") } else { text };
+    if text.contains([',', '"', '\n', '\r']) { format!("\"{}\"", text.replace('"', "\"\"")) } else { text }
+}
+
+/// `GET register`, public: the permits of the types on the public register, the latest first.
+async fn register(k: &Kernel, req: &SiteRequest) -> Result<SiteResponse> {
+    let kind = req.query.get("type").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty());
+    let mut tx = k.db.tenant_tx(req.tenant).await?;
+    let found: Vec<(Option<String>, String, Option<String>, Option<NaiveDate>, Option<NaiveDate>, Option<String>, Option<String>)> = sqlx::query_as(
+        "select p.number, t.type_name, p.holder_name, p.issued_on, p.expires_on, p.status, p.conditions \
+         from e_permit p join e_permit_type t on t.tenant_id = p.tenant_id and t.id = p.permit_type \
+         where p.tenant_id = $1 and coalesce(t.in_register, false) and ($2::text is null or lower(t.type_name) = lower($2)) \
+         order by p.issued_on desc, p.number desc limit $3",
+    )
+    .bind(req.tenant)
+    .bind(kind)
+    .bind(REGISTER)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    const COLUMNS: [&str; 7] = ["number", "permit_type", "holder", "issued_on", "expires_on", "status", "conditions"];
+    let rows: Vec<Value> = found
+        .into_iter()
+        .map(|(number, kind, holder, issued, expires, status, conditions)| {
+            json!({"number": number, "permit_type": kind, "holder": holder, "issued_on": issued.map(|d| d.to_string()),
+                   "expires_on": expires.map(|d| d.to_string()), "status": status, "conditions": conditions})
+        })
+        .collect();
+    let mut r = if req.query.get("format").and_then(Value::as_str) == Some("csv") {
+        let mut out = COLUMNS.join(",");
+        out.push_str("\r\n");
+        for row in &rows {
+            out.push_str(&COLUMNS.iter().map(|c| cell(&row[*c])).collect::<Vec<_>>().join(","));
+            out.push_str("\r\n");
+        }
+        SiteResponse::text(200, "text/csv; charset=utf-8", out)
+    } else {
+        SiteResponse::json(200, &json!({"permits": rows}))
+    };
+    r.headers.push(("cache-control".into(), "public, max-age=300".into()));
+    Ok(r)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cell;
+    use serde_json::json;
+
+    #[test]
+    fn register_cells() {
+        assert_eq!(cell(&json!("Fencing, 2 m high")), "\"Fencing, 2 m high\"");
+        assert_eq!(cell(&json!("=SUM(A1)")), "'=SUM(A1)");
+        assert_eq!(cell(&json!(null)), "");
+        assert_eq!(cell(&json!("PRM-2026-00001")), "PRM-2026-00001");
+    }
 }
