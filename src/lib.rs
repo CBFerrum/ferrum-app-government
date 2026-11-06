@@ -1,10 +1,15 @@
-//! Government (FERRUM-INDUSTRY-010): permits applied for, reviewed, paid through ERP and issued
-//! with their expiry, cases with deadlines, and a citizens' portal.
+//! Government (FERRUM-INDUSTRY-010): permits applied for, reviewed in stages, paid through ERP,
+//! issued on conditions with their expiry and renewed, a public register, cases with deadlines, and
+//! a citizens' portal.
 //!
 //! * `permits`: an application goes from draft, with every document its type needs and its fee
-//!   invoiced, through review to a permit, or is rejected saying why; permits expire or are revoked.
+//!   invoiced, through its type's review stages (each passed by its role, never by the same person
+//!   twice running, a site inspection saying what it found) to a permit on conditions, or is
+//!   rejected saying why; permits expire, are revoked, or are renewed; applicants are told as
+//!   their application moves, and holders when a permit may be renewed.
 //! * `cases`: due within their category's days, resolved saying how, overdue when late.
-//! * `site`: the portal's "Your services", where citizens apply, upload documents and raise cases.
+//! * `site`: the portal's "Your services", where citizens apply, upload documents, renew permits and
+//!   raise cases; and the public register of the types published on it.
 //!
 //! This app's own design; no code was copied (docs/PROVENANCE.md). Hooks are registered per entity,
 //! so a workspace without the `government` package never runs them. No public-sector rule (records
@@ -15,7 +20,7 @@ mod cases;
 mod permits;
 mod site;
 
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use ferrum_domain::reports::ReportSource;
 use ferrum_kernel::{Ctx, Doc, Error, HookRegistry, Kernel, Result};
 use serde_json::Value;
@@ -47,13 +52,18 @@ pub fn reports() -> Vec<Arc<dyn ReportSource>> {
     vec![]
 }
 
-/// Upkeep: permits past their expiry expired, and late cases marked overdue.
+/// Upkeep, by each workspace's own day: permits past their expiry expired, holders told when their
+/// renewal opens, and late cases marked overdue.
 pub async fn maintenance(k: &Kernel) -> Result<()> {
-    maintenance_on(k, Utc::now().date_naive()).await
+    run(k, None).await
 }
 
-/// [`maintenance`] as of `today`.
+/// [`maintenance`] as of `today`, in every workspace.
 pub async fn maintenance_on(k: &Kernel, today: NaiveDate) -> Result<()> {
+    run(k, Some(today)).await
+}
+
+async fn run(k: &Kernel, on: Option<NaiveDate>) -> Result<()> {
     let mut tx = k.db.system_tx().await?;
     let tenants: Vec<Uuid> = sqlx::query_scalar("select id from tenant where status = 'active' order by id").fetch_all(&mut *tx).await?;
     tx.commit().await?;
@@ -65,8 +75,10 @@ pub async fn maintenance_on(k: &Kernel, today: NaiveDate) -> Result<()> {
                 return Ok(());
             }
             let ctx = Ctx::system(tenant, schema);
+            let today = on.unwrap_or_else(|| ctx.today());
             let mut tx = k.db.tenant_tx(tenant).await?;
             permits::expire(k, &ctx, &mut tx, today).await?;
+            permits::remind(k, &ctx, &mut tx, today).await?;
             cases::mark_overdue(k, &ctx, &mut tx, today).await?;
             tx.commit().await?;
             Ok::<(), Error>(())

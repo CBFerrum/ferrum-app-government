@@ -1,8 +1,8 @@
 id: government
 name: Government
-version: 0.1.8
+version: 0.2.0
 publisher: cbferrum
-summary: "Permits applied for, reviewed, paid through ERP and issued with their expiry, cases with deadlines, and a citizens' portal"
+summary: "Permits applied for, reviewed in stages, paid through ERP, issued on conditions and renewed, a public register, cases with deadlines, and a citizens' portal"
 description: README.md
 categories: [industry, support]
 license: AGPL-3.0-only
@@ -33,4 +33,7 @@ contributes:
     - {id: case, label: Case, path: government/e/PublicCase/new, entity: PublicCase}
   # The workspace's portal: a citizen's applications, permits and cases at /portal/services/.
   shell.portal:
-    - {id: services, title: Your services, description: "Apply for permits, follow your applications, and raise cases"}
+    - {id: services, title: Your services, description: "Apply for permits, follow your applications, renew permits, and raise cases"}
+  # Applicants told as their application moves, and holders when a permit may be renewed.
+  shell.notification:
+    - {id: application, label: Your applications and permits, default: [email, inapp]}
