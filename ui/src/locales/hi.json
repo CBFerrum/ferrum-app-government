@@ -35,6 +35,8 @@
   "no fee": "कोई शुल्क नहीं",
   "{d} added": "{d} जोड़ा गया",
   "{number} · {subject} · due {due_on}": "{number} · {subject} · देय {due_on}",
+  "{r} · waiting for {value}": "{r} · {value} की प्रतीक्षा",
   "{valid_months} months": "{valid_months} महीने",
+  "{value} · {value2} · due {value3}": "{value} · {value2} · देय {value3}",
   "· until {expires_on}": "· {expires_on} तक"
 }

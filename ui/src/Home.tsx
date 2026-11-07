@@ -54,7 +54,7 @@ export function Home() {
   if (q.isPending) return <PageLoading />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   const app = (r: Row) => `${String(r.number ?? "")} · ${String(r.applicant_name ?? "")}`;
-  const reviewing = (r: Row) => (r.stage ? `${app(r)} · waiting for ${String(r.stage)}` : app(r));
+  const reviewing = (r: Row) => (r.stage ? t("{r} · waiting for {value}", { r: app(r), value: String(r.stage) }) : app(r));
   return (
     <div className="np-page">
       <h2>{t("Queues")}</h2>
@@ -62,7 +62,7 @@ export function Home() {
         <Queue title={t("To take up")} list={q.data.submitted} entity="PermitApplication" label={app} />
         <Queue title={t("Under review")} list={q.data.review} entity="PermitApplication" label={reviewing} />
         <Queue title={t("To issue")} list={q.data.approved} entity="PermitApplication" label={app} />
-        <Queue title={t("Open cases")} list={q.data.cases} entity="PublicCase" label={(r) => `${String(r.number ?? "")} · ${String(r.subject ?? "")} · due ${String(r.due_on ?? "")}`} />
+        <Queue title={t("Open cases")} list={q.data.cases} entity="PublicCase" label={(r) => t("{value} · {value2} · due {value3}", { value: String(r.number ?? ""), value2: String(r.subject ?? ""), value3: String(r.due_on ?? "") })} />
       </div>
     </div>
   );
