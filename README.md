@@ -68,6 +68,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.2.7** | Pass This Stage no longer comes filled with every stage waiting: its Stage is empty, the first you may pass. |
 | **0.2.6** | Rebuilt with Ferrum-Frontend 63280d3: right to left, pages mirror; the records pages' words in Arabic and Hindi. |
 | **0.2.5** | Review stages side by side: passed in any order, each by its own people. |
 | **0.2.4** | Rebuilt with Ferrum-Frontend a64416a: a box whose default is 1 shows ticked. |

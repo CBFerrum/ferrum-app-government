@@ -238,12 +238,12 @@ impl DocHook for ApplicationHook {
                 let (group, left) = open(&all, &done).ok_or_else(|| Error::invalid("every stage is passed: approve it"))?;
                 let may = |i: usize| all[i].1.as_ref().is_none_or(|role| hc.ctx.is_admin || hc.ctx.roles.iter().any(|r| r == role));
                 // The stage named, else the first the caller may pass: side by side, each their own.
-                let pick = match params.get("stage").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()) {
+                let pick = match params.get("which").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()) {
                     Some(n) => left
                         .iter()
                         .copied()
                         .find(|&i| all[i].0 == n)
-                        .ok_or_else(|| Error::field("stage", format!("is not one it waits for: {}", names(&all, &left))))?,
+                        .ok_or_else(|| Error::field("which", format!("is not one it waits for: {}", names(&all, &left))))?,
                     None => left.iter().copied().find(|&i| may(i)).unwrap_or(left[0]),
                 };
                 let (stage, role, inspection, _) = all[pick].clone();

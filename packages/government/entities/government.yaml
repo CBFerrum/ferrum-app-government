@@ -93,7 +93,7 @@
     - {name: take_up, label: Take It Up, permission: write, condition: "doc.status == 'Submitted'"}
     - {name: pass_stage, label: Pass This Stage, permission: write, condition: "doc.status == 'Under Review' && doc.stage != null && doc.stage != ''",
        params: [{name: note, type: text, label: Note}, {name: findings, type: text, label: Findings, description: "What a site inspection found"},
-                {name: stage, type: data, label: Stage, description: "Which, when stages wait side by side and you may pass more than one"}]}
+                {name: which, type: data, label: Stage, description: "Which, when stages wait side by side and you may pass more than one: when empty, the first you may pass"}]}
     - {name: approve, label: Approve It, permission: write, condition: "doc.status == 'Under Review'",
        params: [{name: note, type: text, label: Note}, {name: conditions, type: text, label: Conditions, description: "What the permit is issued on condition of"}]}
     - {name: reject, label: Reject It, permission: write, condition: "doc.status == 'Under Review'", params: [{name: note, type: text, label: Why, required: true}]}
