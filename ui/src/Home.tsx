@@ -3,7 +3,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { api, docPath, t } from "@ferrum/client";
+import { api, docPath, t, isolate } from "@ferrum/client";
 import { Badge, ErrorState, PageLoading, useShellTitle } from "@ferrum/kit";
 
 export interface Row {
@@ -23,12 +23,12 @@ function Queue({ title, list, entity, label }: { title: string; list: Row[]; ent
   return (
     <section className="card card-pad stack" aria-label={title}>
       <h3>
-        {title} ({list.length})
+        {isolate(title)} ({list.length})
       </h3>
       <ul className="stack">
         {list.map((r) => (
           <li key={r.id}>
-            <Link to={`/e/${entity}/${r.id}`}>{label(r)}</Link> {r.overdue ? <Badge tone="red">{t("Overdue")}</Badge> : null}
+            <Link to={`/e/${entity}/${r.id}`}>{isolate(label(r))}</Link> {r.overdue ? <Badge tone="red">{t("Overdue")}</Badge> : null}
           </li>
         ))}
       </ul>
@@ -37,7 +37,7 @@ function Queue({ title, list, entity, label }: { title: string; list: Row[]; ent
 }
 
 export function Home() {
-  useShellTitle("Government");
+  useShellTitle(t("Government"));
   const q = useQuery({
     queryKey: ["government", "queues"],
     queryFn: async () => {

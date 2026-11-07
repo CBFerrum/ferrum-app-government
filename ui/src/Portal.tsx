@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { api, errorMessage, formatValue, todayIso, t as tr } from "@ferrum/client";
+import { api, errorMessage, formatValue, todayIso, t as tr, isolate } from "@ferrum/client";
 import { Badge, Button, ErrorState, Field, PageLoading, statusTone, toast, useShellTitle } from "@ferrum/kit";
 
 const BASE = "/api/app/government/portal";
@@ -75,7 +75,7 @@ async function base64(file: File): Promise<string> {
 }
 
 export function PortalServices() {
-  useShellTitle("Your services");
+  useShellTitle(tr("Your services"));
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["government", "portal"], queryFn: ({ signal }) => api.get<Services>(`${BASE}/home`, {}, signal) });
   const [busy, setBusy] = useState<string | null>(null);
@@ -101,7 +101,7 @@ export function PortalServices() {
   const typeOf = (id?: string | null) => types.find((t) => t.id === id);
   const raise = (e: FormEvent) => {
     e.preventDefault();
-    void run("case", () => api.post(`${BASE}/cases`, { category: category || categories[0]?.id, subject: subject.trim(), description: description.trim() }), "Your case is with the team").then(() => {
+    void run("case", () => api.post(`${BASE}/cases`, { category: category || categories[0]?.id, subject: subject.trim(), description: description.trim() }), tr("Your case is with the team")).then(() => {
       setSubject("");
       setDescription("");
     });
@@ -120,9 +120,9 @@ export function PortalServices() {
           {types.map((t) => (
             <li key={t.id} className="row" style={{ justifyContent: "space-between" }}>
               <span>
-                <strong>{t.type_name}</strong> · {Number(t.fee ?? 0) > 0 ? `fee ${formatValue({ type: "currency" }, t.fee)}` : "no fee"} · {t.valid_months === 1 ? "1 month" : `${t.valid_months} months`}{t.documents.length ? ` · needs ${t.documents.join(", ")}` : ""}
+                <strong>{isolate(t.type_name)}</strong> · {Number(t.fee ?? 0) > 0 ? tr("fee {value}", { value: formatValue({ type: "currency" }, t.fee) }) : tr("no fee")} · {t.valid_months === 1 ? tr("1 month") : tr("{valid_months} months", { valid_months: String(t.valid_months) })}{t.documents.length ? tr(" · needs {value}", { value: t.documents.join(", ") }) : ""}
               </span>
-              <Button loading={busy === `apply-${t.id}`} onClick={() => void run(`apply-${t.id}`, () => api.post(`${BASE}/applications`, { permit_type: t.id }), "Draft started")}>
+              <Button loading={busy === `apply-${t.id}`} onClick={() => void run(`apply-${t.id}`, () => api.post(`${BASE}/applications`, { permit_type: t.id }), tr("Draft started"))}>
                 {tr("Apply")}
               </Button>
             </li>
@@ -133,21 +133,21 @@ export function PortalServices() {
         const t = typeOf(a.permit_type);
         const needed = stillNeeded(t?.documents ?? [], a);
         return (
-          <section key={a.id} className="card card-pad stack" aria-label={`Application ${a.number ?? ""}`}>
+          <section key={a.id} className="card card-pad stack" aria-label={tr("Application {value}", { value: a.number ?? "" })}>
             <header className="row" style={{ justifyContent: "space-between" }}>
               <h3>
-                {t?.type_name ?? "Permit"} · {a.number}
+                {t?.type_name ?? tr("Permit")} · {isolate(a.number ?? "")}
               </h3>
-              <Badge tone={statusTone(a.status)}>{a.status}</Badge>
+              <Badge tone={statusTone(a.status)}>{isolate(a.status ?? "")}</Badge>
             </header>
-            {a.decision_note && <p>{a.decision_note}</p>}
+            {a.decision_note && <p>{isolate(a.decision_note)}</p>}
             {a.status === "Under Review" && a.stage && <p className="muted">{tr("Waiting for: {stage}", { stage: a.stage })}</p>}
             {(a.reviews ?? []).length > 0 && (
               <ul className="stack">
                 {(a.reviews ?? []).map((r, i) => (
                   <li key={i}>
-                    {r.stage} · {r.outcome} · {r.reviewed_on}
-                    {r.findings ? ` · found: ${r.findings}` : ""}
+                    {isolate(r.stage ?? "")} · {isolate(r.outcome ?? "")} · {isolate(r.reviewed_on ?? "")}
+                    {r.findings ? tr(" · found: {findings}", { findings: r.findings }) : ""}
                   </li>
                 ))}
               </ul>
@@ -168,17 +168,17 @@ export function PortalServices() {
                           void run(
                             `doc-${a.id}-${d}`,
                             async () => api.post(`${BASE}/applications/${a.id}/documents`, { document: d, file_name: file.name, content_type: file.type, data: await base64(file) }),
-                            `${d} added`,
+                            tr("{d} added", { d }),
                           );
                       }}
                     />
                   </Field>
                 ))}
                 <div className="row">
-                  <Button variant="primary" disabled={needed.length > 0} loading={busy === `submit-${a.id}`} onClick={() => void run(`submit-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/submit`, {}), "Submitted")}>
+                  <Button variant="primary" disabled={needed.length > 0} loading={busy === `submit-${a.id}`} onClick={() => void run(`submit-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/submit`, {}), tr("Submitted"))}>
                     {tr("Submit")}
                   </Button>
-                  <Button loading={busy === `withdraw-${a.id}`} onClick={() => void run(`withdraw-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/withdraw`, {}), "Withdrawn")}>
+                  <Button loading={busy === `withdraw-${a.id}`} onClick={() => void run(`withdraw-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/withdraw`, {}), tr("Withdrawn"))}>
                     {tr("Withdraw")}
                   </Button>
                 </div>
@@ -194,12 +194,12 @@ export function PortalServices() {
             {permits.map((p) => (
               <li key={p.id} className="stack" style={{ gap: 4 }}>
                 <span>
-                  {p.number} · {typeOf(p.permit_type)?.type_name ?? ""} {tr("· until {expires_on}", { expires_on: p.expires_on ?? "" })} <Badge tone={statusTone(p.status)}>{p.status}</Badge>
+                  {isolate(p.number ?? "")} · {typeOf(p.permit_type)?.type_name ?? ""} {tr("· until {expires_on}", { expires_on: p.expires_on ?? "" })} <Badge tone={statusTone(p.status)}>{isolate(p.status ?? "")}</Badge>
                 </span>
                 {p.conditions && <span className="muted">{tr("On condition: {conditions}", { conditions: p.conditions })}</span>}
                 {canRenew(p, todayIso()) && (
                   <span>
-                    <Button loading={busy === `renew-${p.id}`} onClick={() => void run(`renew-${p.id}`, () => api.post(`${BASE}/permits/${p.id}/renew`, {}), "Renewal started")}>
+                    <Button loading={busy === `renew-${p.id}`} onClick={() => void run(`renew-${p.id}`, () => api.post(`${BASE}/permits/${p.id}/renew`, {}), tr("Renewal started"))}>
                       {tr("Renew it")}
                     </Button>
                   </span>
@@ -215,7 +215,7 @@ export function PortalServices() {
         <ul className="stack">
           {cases.map((c) => (
             <li key={c.id}>
-              {tr("{number} · {subject} · due {due_on}", { number: c.number ?? "", subject: c.subject ?? "", due_on: c.due_on ?? "" })} <Badge tone={statusTone(c.status)}>{c.status}</Badge>
+              {tr("{number} · {subject} · due {due_on}", { number: c.number ?? "", subject: c.subject ?? "", due_on: c.due_on ?? "" })} <Badge tone={statusTone(c.status)}>{isolate(c.status ?? "")}</Badge>
               {c.resolution ? ` · ${c.resolution}` : ""}
             </li>
           ))}
@@ -225,7 +225,7 @@ export function PortalServices() {
             <select className="input" value={category || categories[0]?.id || ""} onChange={(e) => setCategory(e.target.value)}>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.category_name}
+                  {isolate(c.category_name)}
                 </option>
               ))}
             </select>
