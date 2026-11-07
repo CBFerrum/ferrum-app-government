@@ -1,6 +1,6 @@
 id: government
 name: Government
-version: 0.2.10
+version: 0.2.11
 publisher: cbferrum
 summary: "Permits applied for, reviewed in stages, paid through ERP, issued on conditions and renewed, a public register, cases with deadlines, and a citizens' portal"
 description: README.md
@@ -37,3 +37,16 @@ contributes:
   # Applicants told as their application moves, and holders when a permit may be renewed.
   shell.notification:
     - {id: application, label: Your applications and permits, default: [email, inapp]}
+  # What the assistant should know in Government's pages, and what it suggests asking there.
+  shell.assistant:
+    - id: government
+      title: "Government"
+      instructions: >-
+        A PermitApplication goes Draft, Submitted, Under Review (through its permit type's stages), then Approved,
+        Rejected, Issued or Withdrawn; its fees are paid through ERP. An issued Permit is Valid until it Expires or is
+        Revoked, and is on the public register. A PublicCase (Open, In Progress, Resolved, Closed) has deadlines set
+        by its category.
+      suggestions:
+        - "Which applications wait for review, oldest first?"
+        - "Which permits expire next month?"
+        - "Which cases are past their deadline?"
