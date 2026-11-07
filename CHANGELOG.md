@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.7
+
+Pass This Stage's dialog no longer comes filled with the whole Waiting For list. Its Stage was
+filled from the application's field of the same name, so with two stages waiting side by side it
+said "Fire Safety, Health Check" and was refused unless cleared. The param is now `which`: empty,
+the caller passes the first stage they may; named, that stage.
+
 ## 0.2.6
 
 Rebuilt with Ferrum-Frontend 63280d3: right to left, its pages mirror as they read (icons that point along the line, margins and alignment by the line's start and end, arrow keys along it), and the records pages' words are in Arabic and Hindi.
