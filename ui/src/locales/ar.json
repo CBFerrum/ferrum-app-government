@@ -35,6 +35,8 @@
   "no fee": "بلا رسوم",
   "{d} added": "أُضيف {d}",
   "{number} · {subject} · due {due_on}": "{number} · {subject} · مستحق في {due_on}",
+  "{r} · waiting for {value}": "{r} · بانتظار {value}",
   "{valid_months} months": "{valid_months} أشهر",
+  "{value} · {value2} · due {value3}": "{value} · {value2} · مستحق في {value3}",
   "· until {expires_on}": "· حتى {expires_on}"
 }
