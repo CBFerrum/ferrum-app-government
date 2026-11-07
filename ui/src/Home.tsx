@@ -3,7 +3,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { api, docPath } from "@ferrum/client";
+import { api, docPath, t } from "@ferrum/client";
 import { Badge, ErrorState, PageLoading, useShellTitle } from "@ferrum/kit";
 
 export interface Row {
@@ -28,7 +28,7 @@ function Queue({ title, list, entity, label }: { title: string; list: Row[]; ent
       <ul className="stack">
         {list.map((r) => (
           <li key={r.id}>
-            <Link to={`/e/${entity}/${r.id}`}>{label(r)}</Link> {r.overdue ? <Badge tone="red">Overdue</Badge> : null}
+            <Link to={`/e/${entity}/${r.id}`}>{label(r)}</Link> {r.overdue ? <Badge tone="red">{t("Overdue")}</Badge> : null}
           </li>
         ))}
       </ul>
@@ -57,12 +57,12 @@ export function Home() {
   const reviewing = (r: Row) => (r.stage ? `${app(r)} · waiting for ${String(r.stage)}` : app(r));
   return (
     <div className="np-page">
-      <h2>Queues</h2>
+      <h2>{t("Queues")}</h2>
       <div className="np-columns">
-        <Queue title="To take up" list={q.data.submitted} entity="PermitApplication" label={app} />
-        <Queue title="Under review" list={q.data.review} entity="PermitApplication" label={reviewing} />
-        <Queue title="To issue" list={q.data.approved} entity="PermitApplication" label={app} />
-        <Queue title="Open cases" list={q.data.cases} entity="PublicCase" label={(r) => `${String(r.number ?? "")} · ${String(r.subject ?? "")} · due ${String(r.due_on ?? "")}`} />
+        <Queue title={t("To take up")} list={q.data.submitted} entity="PermitApplication" label={app} />
+        <Queue title={t("Under review")} list={q.data.review} entity="PermitApplication" label={reviewing} />
+        <Queue title={t("To issue")} list={q.data.approved} entity="PermitApplication" label={app} />
+        <Queue title={t("Open cases")} list={q.data.cases} entity="PublicCase" label={(r) => `${String(r.number ?? "")} · ${String(r.subject ?? "")} · due ${String(r.due_on ?? "")}`} />
       </div>
     </div>
   );

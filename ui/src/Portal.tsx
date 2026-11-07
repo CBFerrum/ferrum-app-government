@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { api, errorMessage, formatValue, todayIso } from "@ferrum/client";
+import { api, errorMessage, formatValue, todayIso, t as tr } from "@ferrum/client";
 import { Badge, Button, ErrorState, Field, PageLoading, statusTone, toast, useShellTitle } from "@ferrum/kit";
 
 const BASE = "/api/app/government/portal";
@@ -110,12 +110,12 @@ export function PortalServices() {
     <div className="stack np-page">
       <div className="page-head">
         <div>
-          <h1 className="page-title">Your services</h1>
-          <p className="page-sub">Apply for permits, follow your applications, and raise cases.</p>
+          <h1 className="page-title">{tr("Your services")}</h1>
+          <p className="page-sub">{tr("Apply for permits, follow your applications, and raise cases.")}</p>
         </div>
       </div>
-      <section className="card card-pad stack" aria-label="Apply for a permit">
-        <h3>Apply for a permit</h3>
+      <section className="card card-pad stack" aria-label={tr("Apply for a permit")}>
+        <h3>{tr("Apply for a permit")}</h3>
         <ul className="stack">
           {types.map((t) => (
             <li key={t.id} className="row" style={{ justifyContent: "space-between" }}>
@@ -123,7 +123,7 @@ export function PortalServices() {
                 <strong>{t.type_name}</strong> · {Number(t.fee ?? 0) > 0 ? `fee ${formatValue({ type: "currency" }, t.fee)}` : "no fee"} · {t.valid_months === 1 ? "1 month" : `${t.valid_months} months`}{t.documents.length ? ` · needs ${t.documents.join(", ")}` : ""}
               </span>
               <Button loading={busy === `apply-${t.id}`} onClick={() => void run(`apply-${t.id}`, () => api.post(`${BASE}/applications`, { permit_type: t.id }), "Draft started")}>
-                Apply
+                {tr("Apply")}
               </Button>
             </li>
           ))}
@@ -141,7 +141,7 @@ export function PortalServices() {
               <Badge tone={statusTone(a.status)}>{a.status}</Badge>
             </header>
             {a.decision_note && <p>{a.decision_note}</p>}
-            {a.status === "Under Review" && a.stage && <p className="muted">Waiting for: {a.stage}</p>}
+            {a.status === "Under Review" && a.stage && <p className="muted">{tr("Waiting for: {stage}", { stage: a.stage })}</p>}
             {(a.reviews ?? []).length > 0 && (
               <ul className="stack">
                 {(a.reviews ?? []).map((r, i) => (
@@ -152,9 +152,9 @@ export function PortalServices() {
                 ))}
               </ul>
             )}
-            {a.conditions && <p>On condition: {a.conditions}</p>}
-            {a.fee_invoice && <a href={`/portal/invoices/${a.fee_invoice}`}>The fee's invoice</a>}
-            {a.fee_drafted && <p className="muted">The fee's invoice is not issued yet.</p>}
+            {a.conditions && <p>{tr("On condition: {conditions}", { conditions: a.conditions })}</p>}
+            {a.fee_invoice && <a href={`/portal/invoices/${a.fee_invoice}`}>{tr("The fee's invoice")}</a>}
+            {a.fee_drafted && <p className="muted">{tr("The fee's invoice is not issued yet.")}</p>}
             {a.status === "Draft" && (
               <>
                 {(t?.documents ?? []).map((d) => (
@@ -176,10 +176,10 @@ export function PortalServices() {
                 ))}
                 <div className="row">
                   <Button variant="primary" disabled={needed.length > 0} loading={busy === `submit-${a.id}`} onClick={() => void run(`submit-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/submit`, {}), "Submitted")}>
-                    Submit
+                    {tr("Submit")}
                   </Button>
                   <Button loading={busy === `withdraw-${a.id}`} onClick={() => void run(`withdraw-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/withdraw`, {}), "Withdrawn")}>
-                    Withdraw
+                    {tr("Withdraw")}
                   </Button>
                 </div>
               </>
@@ -188,40 +188,40 @@ export function PortalServices() {
         );
       })}
       {permits.length > 0 && (
-        <section className="card card-pad stack" aria-label="Your permits">
-          <h3>Your permits</h3>
+        <section className="card card-pad stack" aria-label={tr("Your permits")}>
+          <h3>{tr("Your permits")}</h3>
           <ul className="stack">
             {permits.map((p) => (
               <li key={p.id} className="stack" style={{ gap: 4 }}>
                 <span>
-                  {p.number} · {typeOf(p.permit_type)?.type_name ?? ""} · until {p.expires_on} <Badge tone={statusTone(p.status)}>{p.status}</Badge>
+                  {p.number} · {typeOf(p.permit_type)?.type_name ?? ""} {tr("· until {expires_on}", { expires_on: p.expires_on ?? "" })} <Badge tone={statusTone(p.status)}>{p.status}</Badge>
                 </span>
-                {p.conditions && <span className="muted">On condition: {p.conditions}</span>}
+                {p.conditions && <span className="muted">{tr("On condition: {conditions}", { conditions: p.conditions })}</span>}
                 {canRenew(p, todayIso()) && (
                   <span>
                     <Button loading={busy === `renew-${p.id}`} onClick={() => void run(`renew-${p.id}`, () => api.post(`${BASE}/permits/${p.id}/renew`, {}), "Renewal started")}>
-                      Renew it
+                      {tr("Renew it")}
                     </Button>
                   </span>
                 )}
-                {!canRenew(p, todayIso()) && p.renew_from && !p.renewal && <span className="muted">It may be renewed from {p.renew_from}.</span>}
+                {!canRenew(p, todayIso()) && p.renew_from && !p.renewal && <span className="muted">{tr("It may be renewed from {renew_from}.", { renew_from: p.renew_from })}</span>}
               </li>
             ))}
           </ul>
         </section>
       )}
-      <section className="card card-pad stack" aria-label="Your cases">
-        <h3>Your cases</h3>
+      <section className="card card-pad stack" aria-label={tr("Your cases")}>
+        <h3>{tr("Your cases")}</h3>
         <ul className="stack">
           {cases.map((c) => (
             <li key={c.id}>
-              {c.number} · {c.subject} · due {c.due_on} <Badge tone={statusTone(c.status)}>{c.status}</Badge>
+              {tr("{number} · {subject} · due {due_on}", { number: c.number ?? "", subject: c.subject ?? "", due_on: c.due_on ?? "" })} <Badge tone={statusTone(c.status)}>{c.status}</Badge>
               {c.resolution ? ` · ${c.resolution}` : ""}
             </li>
           ))}
         </ul>
         <form className="stack" onSubmit={raise}>
-          <Field label="About">
+          <Field label={tr("About")}>
             <select className="input" value={category || categories[0]?.id || ""} onChange={(e) => setCategory(e.target.value)}>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -230,14 +230,14 @@ export function PortalServices() {
               ))}
             </select>
           </Field>
-          <Field label="Subject">
+          <Field label={tr("Subject")}>
             <input className="input" value={subject} maxLength={300} required onChange={(e) => setSubject(e.target.value)} />
           </Field>
-          <Field label="What happened">
+          <Field label={tr("What happened")}>
             <textarea className="input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
           </Field>
           <Button type="submit" variant="primary" loading={busy === "case"} disabled={!subject.trim() || !categories.length}>
-            Raise a case
+            {tr("Raise a case")}
           </Button>
         </form>
       </section>
