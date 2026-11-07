@@ -142,6 +142,11 @@ async fn scenario() {
     packages.extend(ferrum_app_erp::packages().expect("ERP's packages"));
     packages.extend(ferrum_app_government::packages().expect("app packages"));
     let catalog = Catalog::from_packages(packages).expect("catalog");
+    // A record's action dialog fills each param from the record's field of the same name: Pass This
+    // Stage's must not take Waiting For's whole list.
+    let applications = catalog.entity("PermitApplication").expect("applications");
+    let pass = applications.actions.iter().find(|a| a.name == "pass_stage").expect("pass_stage");
+    assert!(pass.params.iter().all(|p| applications.fields.iter().all(|f| f.name != p.name)), "a pass_stage param named like a field");
     let mut hooks = HookRegistry::default();
     ferrum_domain::register(&mut hooks);
     ferrum_app_erp::register(&mut hooks);
@@ -470,12 +475,12 @@ async fn scenario() {
     t.act(&health, "PermitApplication", m1, "pass_stage", json!({"note": "Clean"})).await.expect("health passed");
     assert_eq!(t.get("PermitApplication", m1).await["stage"], "Fire safety");
     refused(t.act(&health, "PermitApplication", m1, "pass_stage", Value::Null).await, "forbidden", "Fire safety: a Fire Officer passes it");
-    refused(t.act(&both, "PermitApplication", m1, "pass_stage", json!({"stage": "Health check"})).await, "invalid", "is not one it waits for: Fire safety");
+    refused(t.act(&both, "PermitApplication", m1, "pass_stage", json!({"which": "Health check"})).await, "invalid", "is not one it waits for: Fire safety");
     t.act(&both, "PermitApplication", m1, "pass_stage", Value::Null).await.expect("fire passed");
     assert_eq!(t.get("PermitApplication", m1).await["stage"], "Final review", "the group done, the next stage");
     // Someone who may pass both passes one; a rejection fails what it still waited for.
     t.act(&officer, "PermitApplication", m2, "take_up", Value::Null).await.unwrap();
-    t.act(&both, "PermitApplication", m2, "pass_stage", json!({"stage": "Health check"})).await.expect("one of the two");
+    t.act(&both, "PermitApplication", m2, "pass_stage", json!({"which": "Health check"})).await.expect("one of the two");
     refused(t.act(&both, "PermitApplication", m2, "pass_stage", Value::Null).await, "forbidden", "someone other than whoever passed a stage beside it");
     t.act(&officer, "PermitApplication", m2, "reject", json!({"note": "No stalls this season"})).await.unwrap();
     let outcomes: Vec<(String, String)> = t.get("PermitApplication", m2).await["reviews"]
