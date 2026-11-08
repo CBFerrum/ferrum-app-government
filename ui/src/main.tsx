@@ -22,7 +22,7 @@ function RouteError() {
   return <ErrorState error={useRouteError()} onRetry={() => window.location.reload()} />;
 }
 
-function NotFound({ back = "Go to the queues" }: { back?: string }) {
+function NotFound({ back = t("Go to the queues") }: { back?: string }) {
   return (
     <EmptyState title={t("Page not found")}>
       <Link to="/">{isolate(back)}</Link>
@@ -53,7 +53,7 @@ const portalRoutes = [
     errorElement: <RouteError />,
     children: [
       { index: true, lazy: () => import("./Portal").then((m) => ({ Component: m.PortalServices })) },
-      { path: "*", element: <NotFound back="Go to your services" /> },
+      { path: "*", get element() { return <NotFound back={t("Go to your services")} />; } },
     ],
   },
 ];
