@@ -60,6 +60,9 @@ impl T {
     async fn insert(&self, ctx: &Ctx, entity: &str, v: Value) -> Doc {
         self.k.insert(ctx, entity, obj(v)).await.unwrap_or_else(|e| panic!("insert {entity}: {e:?}"))
     }
+    async fn update(&self, ctx: &Ctx, entity: &str, id: Uuid, v: Value) -> Doc {
+        self.k.update(ctx, entity, id, v.as_object().cloned().unwrap(), None).await.unwrap_or_else(|e| panic!("{entity}: {e:?}"))
+    }
     async fn get(&self, entity: &str, id: Uuid) -> Doc {
         self.k.get(&self.admin, entity, id, false).await.unwrap_or_else(|e| panic!("get {entity}: {e:?}"))
     }
@@ -311,6 +314,50 @@ async fn scenario() {
     t.act(&officer, "PermitApplication", p1, "take_up", Value::Null).await.unwrap();
     refused(t.act(&officer, "PermitApplication", p1, "reject", Value::Null).await, "invalid", "says why");
     t.act(&officer, "PermitApplication", p1, "reject", json!({"note": "The road is a bus route"})).await.unwrap();
+    // Ria appeals it from the portal (FEO-052). Whoever took part in the decision does not decide the
+    // appeal; someone else upholds it, and it may not be appealed again.
+    let seen = call(&k, Some(&ria), "GET", "portal/home", Value::Null).await.unwrap();
+    let mine = seen["applications"].as_array().unwrap().iter().find(|a| a["id"] == json!(p1.to_string())).cloned().unwrap();
+    assert_eq!(mine["appeal_until"], json!((today + chrono::Duration::days(30)).to_string()), "thirty days");
+    refused(call(&k, Some(&ria), "POST", &format!("portal/applications/{p1}/appeal"), json!({})).await, "invalid", "says why");
+    let appealed = call(&k, Some(&ria), "POST", &format!("portal/applications/{p1}/appeal"), json!({"grounds": "Buses are diverted that day"})).await.unwrap();
+    assert_eq!((appealed["status"].as_str(), appealed["appeal_until"].clone()), (Some("Appealed"), Value::Null));
+    refused(
+        t.act(&officer, "PermitApplication", p1, "decide_appeal", json!({"outcome": "Overturned", "note": "Fine"})).await,
+        "forbidden",
+        "no part in the decision",
+    );
+    let appeals = t.user("appeals@town.test", &["Permit Officer"]).await;
+    t.act(&appeals, "PermitApplication", p1, "decide_appeal", json!({"outcome": "Upheld", "note": "The diversion is not confirmed"})).await.unwrap();
+    let upheld = t.get("PermitApplication", p1).await;
+    assert_eq!(
+        (upheld["status"].as_str(), upheld["appeal_outcome"].as_str(), upheld["appeal_decided_by"].as_str(), upheld["decided_by"].as_str()),
+        (Some("Rejected"), Some("Upheld"), Some("appeals@town.test"), Some("officer@town.test"))
+    );
+    assert!(t.act(&appeals, "PermitApplication", p1, "appeal", json!({"grounds": "Again"})).await.is_err(), "once");
+    // Another, overturned on appeal: approved as an approval would be, then issued.
+    let p4 = uid(&call(&k, Some(&ria), "POST", "portal/applications", json!({"permit_type": party.to_string()})).await.unwrap()["id"]);
+    call(&k, Some(&ria), "POST", &format!("portal/applications/{p4}/submit"), json!({})).await.unwrap();
+    t.act(&officer, "PermitApplication", p4, "take_up", Value::Null).await.unwrap();
+    t.act(&officer, "PermitApplication", p4, "reject", json!({"note": "Too late to plan"})).await.unwrap();
+    call(&k, Some(&ria), "POST", &format!("portal/applications/{p4}/appeal"), json!({"grounds": "It was filed a month ahead"})).await.unwrap();
+    t.act(&appeals, "PermitApplication", p4, "decide_appeal", json!({"outcome": "Overturned", "note": "It was in time", "conditions": "Ends by 20:00"}))
+        .await
+        .unwrap();
+    let overturned = t.get("PermitApplication", p4).await;
+    assert_eq!(
+        (overturned["status"].as_str(), overturned["conditions"].as_str(), overturned["decided_by"].as_str()),
+        (Some("Approved"), Some("Ends by 20:00"), Some("appeals@town.test"))
+    );
+    t.act(&officer, "PermitApplication", p4, "issue", Value::Null).await.unwrap();
+    // A type that takes no appeals says so.
+    t.update(&manager, "PermitType", party, json!({"appeal_within_days": 0})).await;
+    let p5 = uid(&call(&k, Some(&ria), "POST", "portal/applications", json!({"permit_type": party.to_string()})).await.unwrap()["id"]);
+    call(&k, Some(&ria), "POST", &format!("portal/applications/{p5}/submit"), json!({})).await.unwrap();
+    t.act(&officer, "PermitApplication", p5, "take_up", Value::Null).await.unwrap();
+    t.act(&officer, "PermitApplication", p5, "reject", json!({"note": "Not this street"})).await.unwrap();
+    refused(call(&k, Some(&ria), "POST", &format!("portal/applications/{p5}/appeal"), json!({"grounds": "Please"})).await, "invalid", "may not be appealed");
+    t.update(&manager, "PermitType", party, json!({"appeal_within_days": 30})).await;
     let p2 = uid(&call(&k, Some(&ria), "POST", "portal/applications", json!({"permit_type": party.to_string()})).await.unwrap()["id"]);
     call(&k, Some(&ria), "POST", &format!("portal/applications/{p2}/submit"), json!({})).await.unwrap();
     t.act(&officer, "PermitApplication", p2, "take_up", Value::Null).await.unwrap();
@@ -339,6 +386,7 @@ async fn scenario() {
             &manager,
             "PermitType",
             json!({"type_name": "Kiosk", "fee": "0", "valid_months": 1, "renewable": true, "renew_within_days": 60, "in_register": true,
+                   "register_holder": "Published", "register_conditions": "Published",
                    "stages": [{"stage": "Planning review", "role": "Planning Officer"}, {"stage": "Site visit", "role": "Inspector", "inspection": true}]}),
         )
         .await["id"]);
@@ -403,6 +451,56 @@ async fn scenario() {
     assert!(ctype.starts_with("text/csv") && csv.starts_with("number,permit_type,holder,") && csv.contains("Kim Roy"), "{csv}");
     let off: Value = serde_json::from_str(&register(&k, tenant, json!({"type": "Building permit"})).await.unwrap().1).unwrap();
     assert!(off["permits"].as_array().unwrap().is_empty(), "a type not on the register: {off}");
+    // What the register publishes is the type's to say (FEO-052): without its holder, the name goes;
+    // ended, a permit stays its months on it, then goes, unless the type keeps it for good.
+    let listed = || async { serde_json::from_str::<Value>(&register(&k, tenant, json!({})).await.unwrap().1).unwrap()["permits"].clone() };
+    t.update(&manager, "PermitType", kiosk, json!({"register_holder": "Left Out"})).await;
+    let shown = listed().await;
+    assert_eq!((shown[0]["holder"].clone(), shown[0]["conditions"].as_str()), (Value::Null, Some("Closed by 22:00")), "{shown}");
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    let was: (String, chrono::NaiveDate) = sqlx::query_as("select status, expires_on from e_permit where tenant_id = $1 and id = $2")
+        .bind(tenant)
+        .bind(kiosk_permit)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("update e_permit set status = 'Expired', expires_on = current_date - interval '13 months' where tenant_id = $1 and id = $2")
+        .bind(tenant)
+        .bind(kiosk_permit)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert!(listed().await.as_array().unwrap().is_empty(), "twelve months after it ended, it is off the register");
+    t.update(&manager, "PermitType", kiosk, json!({"register_keep_months": null})).await;
+    assert_eq!(listed().await.as_array().unwrap().len(), 1, "kept for good");
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    sqlx::query("update e_permit set status = $3, expires_on = $4 where tenant_id = $1 and id = $2")
+        .bind(tenant)
+        .bind(kiosk_permit)
+        .bind(&was.0)
+        .bind(was.1)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    t.update(&manager, "PermitType", kiosk, json!({"register_holder": "Published", "register_keep_months": 12})).await;
+    // A type from before it was its to say keeps publishing what it did, once upkeep has run; a type
+    // made since says for itself.
+    let legacy = Uuid::now_v7();
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    sqlx::query("insert into e_permit_type (tenant_id, id, type_name, valid_months, in_register, active) values ($1, $2, 'Sandwich board', 12, true, true)")
+        .bind(tenant)
+        .bind(legacy)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    k.maintenance().await.expect("upkeep");
+    while k.run_jobs_once(4).await.unwrap() > 0 {}
+    let before = t.get("PermitType", legacy).await;
+    assert_eq!((before["register_holder"].clone(), before["register_conditions"].clone()), (json!("Published"), json!("Published")), "as before");
+    assert_eq!(t.get("PermitType", party).await["register_holder"], json!("Left Out"), "made since: not published unless said");
     // A month's permit renews from sixty days before its end: Kim is told once, and renews it.
     ferrum_app_government::maintenance_on(&k, today).await.unwrap();
     ferrum_app_government::maintenance_on(&k, today).await.unwrap();
@@ -529,10 +627,11 @@ async fn scenario() {
 
     // ───────────── what a citizen sees ─────────────
     let mine = call(&k, Some(&ria), "GET", "portal/home", Value::Null).await.unwrap();
-    assert_eq!(mine["applications"].as_array().unwrap().len(), 5);
-    assert_eq!(mine["permits"].as_array().unwrap().len(), 2);
+    assert_eq!(mine["applications"].as_array().unwrap().len(), 7, "with the two appealed");
+    assert_eq!(mine["permits"].as_array().unwrap().len(), 3, "with the one approved on appeal");
     assert_eq!(mine["cases"].as_array().unwrap().iter().map(|c| c["subject"].as_str().unwrap()).collect::<Vec<_>>(), ["Pothole on Mill Lane"]);
-    let rejected = mine["applications"].as_array().unwrap().iter().find(|x| x["status"] == "Rejected").unwrap();
+    let rejected = mine["applications"].as_array().unwrap().iter().find(|x| x["id"] == json!(p1.to_string())).unwrap();
+    assert_eq!((rejected["status"].as_str(), rejected["appeal_outcome"].as_str()), (Some("Rejected"), Some("Upheld")));
     assert_eq!(rejected["decision_note"], "The road is a bus route", "the reason reaches the citizen");
     let sams = call(&k, Some(&sam), "GET", "portal/home", Value::Null).await.unwrap();
     assert!(sams["applications"].as_array().unwrap().is_empty() && sams["permits"].as_array().unwrap().is_empty());

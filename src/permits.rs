@@ -15,6 +15,7 @@ use async_trait::async_trait;
 use chrono::{Duration, Months, NaiveDate};
 use ferrum_domain::flow::created;
 use ferrum_domain::util::{d, elevated, id, money, rows, s, sys};
+use ferrum_kernel::value::parse_date;
 use ferrum_kernel::{Ctx, Doc, DocHook, Error, Filter, HookCtx, Kernel, Result, Tx, notify};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
@@ -282,18 +283,7 @@ impl DocHook for ApplicationHook {
                     let are = if stage.contains(", ") { "are" } else { "is" };
                     return Err(Error::invalid(format!("{stage} {are} not passed yet")));
                 }
-                if let Some(inv) = id(doc, "fee_invoice") {
-                    let paid: Option<bool> = sqlx::query_scalar(
-                        "select docstatus = 1 and coalesce(outstanding_amount, 0) <= 0 from e_sales_invoice where tenant_id = $1 and id = $2",
-                    )
-                    .bind(hc.ctx.tenant)
-                    .bind(inv)
-                    .fetch_optional(&mut **hc.tx)
-                    .await?;
-                    if paid != Some(true) {
-                        return Err(Error::invalid("the fee is not paid yet"));
-                    }
-                }
+                fee_paid(hc, doc).await?;
                 let conditions = params.get("conditions").and_then(Value::as_str).map(str::trim).filter(|c| !c.is_empty()).map(str::to_string);
                 tell(
                     hc.tx,
@@ -304,7 +294,7 @@ impl DocHook for ApplicationHook {
                     ("PermitApplication", application),
                 )
                 .await?;
-                json!({"status": "Approved", "decision_note": note(params), "decided_on": today.to_string(), "conditions": conditions})
+                json!({"status": "Approved", "decision_note": note(params), "decided_on": today.to_string(), "decided_by": hc.ctx.email.to_lowercase(), "conditions": conditions})
             }
             "reject" => {
                 let why = note(params).ok_or_else(|| Error::field("note", "a rejection says why"))?;
@@ -333,7 +323,69 @@ impl DocHook for ApplicationHook {
                     ("PermitApplication", application),
                 )
                 .await?;
-                json!({"status": "Rejected", "decision_note": why, "decided_on": today.to_string(), "stage": null})
+                json!({"status": "Rejected", "decision_note": why, "decided_on": today.to_string(), "decided_by": hc.ctx.email.to_lowercase(), "stage": null})
+            }
+            // An appeal of a rejection, within the type's days, by the applicant or for them (FEO-052).
+            "appeal" => {
+                let grounds = params.get("grounds").and_then(Value::as_str).map(str::trim).filter(|g| !g.is_empty());
+                let grounds = grounds.ok_or_else(|| Error::field("grounds", "an appeal says why the rejection should be looked at again"))?.to_string();
+                let days = type_of(hc, doc).await?.get("appeal_within_days").and_then(Value::as_i64).unwrap_or(30);
+                if days <= 0 {
+                    return Err(Error::invalid("a rejection of this type may not be appealed"));
+                }
+                let rejected = s(doc, "decided_on").and_then(|d| parse_date(d).ok()).ok_or_else(|| Error::internal("a rejection without its day"))?;
+                let until = rejected + Duration::days(days);
+                if today > until {
+                    return Err(Error::invalid(format!("the days to appeal it ended on {until}")));
+                }
+                for to in [s(doc, "officer"), s(doc, "decided_by")] {
+                    tell(hc.tx, hc.ctx.tenant, to, &format!("Application {number} is appealed"), Some(grounds.as_str()), ("PermitApplication", application))
+                        .await?;
+                }
+                json!({"status": "Appealed", "appealed_on": today.to_string(), "appeal_grounds": grounds})
+            }
+            // Decided by someone who took no part in what is appealed: not its officer, not who decided
+            // it, not who reviewed it. Overturned, it is approved as an approval would be.
+            "decide_appeal" => {
+                let outcome = params.get("outcome").and_then(Value::as_str).filter(|o| matches!(*o, "Upheld" | "Overturned"));
+                let outcome = outcome.ok_or_else(|| Error::field("outcome", "is Upheld or Overturned"))?;
+                let why = note(params).ok_or_else(|| Error::field("note", "an appeal's decision says why"))?;
+                let me = hc.ctx.email.to_lowercase();
+                let reviewed = rows(doc, "reviews").iter().any(|r| s(r, "reviewer").is_some_and(|e| e.eq_ignore_ascii_case(&me)));
+                if reviewed || [s(doc, "officer"), s(doc, "decided_by")].into_iter().flatten().any(|e| e.eq_ignore_ascii_case(&me)) {
+                    return Err(Error::Forbidden("someone who took no part in the decision decides its appeal".into()));
+                }
+                let mut v = json!({"appeal_outcome": outcome, "appeal_decided_by": me, "appeal_note": why});
+                if outcome == "Overturned" {
+                    fee_paid(hc, doc).await?;
+                    let conditions = params.get("conditions").and_then(Value::as_str).map(str::trim).filter(|c| !c.is_empty()).map(str::to_string);
+                    tell(
+                        hc.tx,
+                        hc.ctx.tenant,
+                        s(doc, "applicant_email"),
+                        &format!("Your application {number} is approved on appeal"),
+                        Some(why.as_str()),
+                        ("PermitApplication", application),
+                    )
+                    .await?;
+                    v["status"] = json!("Approved");
+                    v["decision_note"] = json!(why);
+                    v["decided_on"] = json!(today.to_string());
+                    v["decided_by"] = json!(me);
+                    v["conditions"] = json!(conditions);
+                } else {
+                    tell(
+                        hc.tx,
+                        hc.ctx.tenant,
+                        s(doc, "applicant_email"),
+                        &format!("The rejection of your application {number} stands"),
+                        Some(why.as_str()),
+                        ("PermitApplication", application),
+                    )
+                    .await?;
+                    v["status"] = json!("Rejected");
+                }
+                v
             }
             "issue" => {
                 let kind = hc
@@ -384,6 +436,21 @@ impl DocHook for ApplicationHook {
 async fn type_of(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<Doc> {
     let kind = id(doc, "permit_type").ok_or_else(|| Error::field("permit_type", "is required"))?;
     hc.kernel.get_tx(&elevated(hc.ctx), hc.tx, "PermitType", kind, false).await
+}
+
+/// Refuses while the application's fee, if it has one, is not paid.
+async fn fee_paid(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
+    let Some(inv) = id(doc, "fee_invoice") else { return Ok(()) };
+    let paid: Option<bool> =
+        sqlx::query_scalar("select docstatus = 1 and coalesce(outstanding_amount, 0) <= 0 from e_sales_invoice where tenant_id = $1 and id = $2")
+            .bind(hc.ctx.tenant)
+            .bind(inv)
+            .fetch_optional(&mut **hc.tx)
+            .await?;
+    if paid != Some(true) {
+        return Err(Error::invalid("the fee is not paid yet"));
+    }
+    Ok(())
 }
 
 /// Checks a submission and invoices its fee: every document the type needs, with its file, and the
@@ -473,7 +540,8 @@ impl DocHook for PermitHook {
             .map(str::trim)
             .filter(|r| !r.is_empty())
             .ok_or_else(|| Error::field("reason", "a revocation says why"))?;
-        hc.kernel.set_values_tx(&elevated(hc.ctx), hc.tx, "Permit", permit, obj(json!({"status": "Revoked", "revoked_reason": why}))).await?;
+        let values = obj(json!({"status": "Revoked", "revoked_reason": why, "revoked_on": hc.ctx.today().to_string()}));
+        hc.kernel.set_values_tx(&elevated(hc.ctx), hc.tx, "Permit", permit, values).await?;
         Ok(Some(json!({"status": "Revoked"})))
     }
 }
