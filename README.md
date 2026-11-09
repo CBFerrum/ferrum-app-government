@@ -37,8 +37,12 @@ accessibility law, or a country's e-government standards.
 - **Renewals and notices.** A renewable permit is renewed from its type's days before it ends, by the
   officer or on the portal; the new permit runs on from the day after. Applicants are told as their
   application moves, and holders once when their renewal opens.
-- **The public register.** The permits of the types published on it, with holder, days, status and
-  conditions, at `/api/site/{workspace}/government/register` (JSON, or CSV with `format=csv`).
+- **The public register.** The permits of the types published on it, with days and status, at
+  `/api/site/{workspace}/government/register` (JSON, or CSV with `format=csv`). Each type says whether
+  its holders' names and its conditions are published, and how many months a permit stays listed once
+  it has expired or been revoked.
+- **Appeals.** A rejection may be appealed within its type's days, on the portal or at the counter. It
+  is decided by someone who took no part in the decision: upheld, it stands; overturned, it is approved.
 - **Your services.** A citizen sees only their own applications, permits and cases, with the fee's
   invoice opening on ERP's "Your invoices".
 
@@ -68,6 +72,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.3.0** | The register publishes what each type says, for as long as it says; appeals decided by someone who took no part. |
 | **0.2.13** | Its names in Arabic and Hindi; the last English sentences translated. |
 | **0.2.12** | Sentences built in code are words too, in Arabic and Hindi. |
 | **0.2.11** | The assistant knows its records. |
