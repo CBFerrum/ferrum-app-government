@@ -46,3 +46,9 @@ personal_data:
   - {entity: PermitApplication, match: applicant_email, name: applicant_name, where: {status: Issued}, retain: "An application put to the office, and its decision, are public records"}
   - {entity: Permit, match: holder_email, name: holder_name, retain: "Permits issued are public records"}
   - {entity: PublicCase, match: citizen_email, name: citizen_name, retain: "Case records, kept as public records law requires"}
+
+# Types on the register before what it shows became theirs to say keep showing what they showed:
+# their holders' names and conditions, for as long as their permits are kept (FEO-052).
+backfills:
+  - {name: register_as_before, entity: PermitType, needs: "register_holder is null or register_conditions is null",
+     set: "register_holder = coalesce(register_holder, 'Published'), register_conditions = coalesce(register_conditions, 'Published')"}

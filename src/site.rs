@@ -41,8 +41,12 @@ impl Site for GovernmentSite {
             ("GET", ["portal", "home"]) => (200, home(k, user, &email).await?),
             ("POST", ["portal", "applications"]) => (201, draft(k, user, &email, &body(&req)?).await?),
             ("POST", ["portal", "applications", a, "documents"]) => (200, attach(k, user, &email, application(a)?, &body(&req)?).await?),
-            ("POST", ["portal", "applications", a, "submit"]) => (200, act(k, user, &email, application(a)?, "submit_application").await?),
-            ("POST", ["portal", "applications", a, "withdraw"]) => (200, act(k, user, &email, application(a)?, "withdraw").await?),
+            ("POST", ["portal", "applications", a, "submit"]) => (200, act(k, user, &email, application(a)?, "submit_application", Value::Null).await?),
+            ("POST", ["portal", "applications", a, "withdraw"]) => (200, act(k, user, &email, application(a)?, "withdraw", Value::Null).await?),
+            ("POST", ["portal", "applications", a, "appeal"]) => {
+                let grounds = text(&body(&req)?, "grounds", 10_000)?;
+                (200, act(k, user, &email, application(a)?, "appeal", json!({"grounds": grounds})).await?)
+            }
             ("POST", ["portal", "cases"]) => (201, raise(k, user, &email, &body(&req)?).await?),
             ("POST", ["portal", "permits", p, "renew"]) => (201, renew(k, user, &email, p.parse().map_err(|_| Error::NotFound("permit".into()))?).await?),
             _ => return Err(Error::NotFound(format!("government endpoint {} {}", req.method, req.path))),
@@ -92,6 +96,22 @@ async fn own(k: &Kernel, user: &Ctx, email: &str, app: Uuid) -> Result<Doc> {
 /// An application as its applicant sees it. The fee's invoice is linked once issued: a draft is not
 /// the applicant's yet, and Your invoices does not open one.
 async fn summary(k: &Kernel, sctx: &Ctx, tx: &mut Tx, a: &Doc) -> Result<Value> {
+    // A rejection may be appealed once, within its type's days (FEO-052).
+    let appeal_days: Option<i64> = match id(a, "permit_type") {
+        Some(t) => {
+            sqlx::query_scalar("select coalesce(appeal_within_days, 30)::bigint from e_permit_type where tenant_id = $1 and id = $2")
+                .bind(sctx.tenant)
+                .bind(t)
+                .fetch_optional(&mut **tx)
+                .await?
+        }
+        None => None,
+    };
+    let appeal_until = match (s(a, "status"), s(a, "appealed_on"), appeal_days.filter(|d| *d > 0), s(a, "decided_on").and_then(|d| d.parse::<NaiveDate>().ok()))
+    {
+        (Some("Rejected"), None, Some(days), Some(on)) => Some(on + chrono::Duration::days(days)).filter(|until| *until >= sctx.today()),
+        _ => None,
+    };
     let issued = match id(a, "fee_invoice") {
         Some(si) => !k.find_tx(sctx, tx, "SalesInvoice", &[Filter::eq("id", si.to_string()), Filter::eq("docstatus", 1)], None, 1).await?.is_empty(),
         None => false,
@@ -100,7 +120,8 @@ async fn summary(k: &Kernel, sctx: &Ctx, tx: &mut Tx, a: &Doc) -> Result<Value> 
               "documents": rows(a, "documents").iter().map(|d| json!({"document": s(d, "document"), "file": s(d, "file")})).collect::<Vec<_>>(),
               "fee_invoice": if issued { s(a, "fee_invoice") } else { None }, "fee_drafted": !issued && s(a, "fee_invoice").is_some(),
               "decision_note": s(a, "decision_note"), "permit": s(a, "permit"), "stage": s(a, "stage"), "conditions": s(a, "conditions"),
-              "renewal_of": s(a, "renewal_of"),
+              "renewal_of": s(a, "renewal_of"), "appeal_until": appeal_until.map(|d| d.to_string()), "appealed_on": s(a, "appealed_on"),
+              "appeal_outcome": s(a, "appeal_outcome"), "appeal_note": s(a, "appeal_note"),
               "reviews": rows(a, "reviews").iter().map(|r| json!({"stage": s(r, "stage"), "outcome": s(r, "outcome"), "reviewed_on": s(r, "reviewed_on"),
                                                                "findings": s(r, "findings")})).collect::<Vec<_>>()}))
 }
@@ -222,9 +243,9 @@ async fn attach(k: &Kernel, user: &Ctx, email: &str, app: Uuid, body: &Map<Strin
 }
 
 /// `POST portal/applications/{id}/submit|withdraw`: the caller's application submitted or withdrawn.
-async fn act(k: &Kernel, user: &Ctx, email: &str, app: Uuid, action: &str) -> Result<Value> {
+async fn act(k: &Kernel, user: &Ctx, email: &str, app: Uuid, action: &str, params: Value) -> Result<Value> {
     own(k, user, email, app).await?;
-    let result = k.run_action(&elevated(user), "PermitApplication", app, action, Value::Null).await?;
+    let result = k.run_action(&elevated(user), "PermitApplication", app, action, params).await?;
     let mut out = summarise(k, user, &own(k, user, email, app).await?).await?;
     out["result"] = result;
     Ok(out)
@@ -284,14 +305,19 @@ fn cell(v: &Value) -> String {
     if text.contains([',', '"', '\n', '\r']) { format!("\"{}\"", text.replace('"', "\"\"")) } else { text }
 }
 
-/// `GET register`, public: the permits of the types on the public register, the latest first.
+/// `GET register`, public: the permits of the types on the public register, the latest first, with
+/// only what each type publishes (its holder's name, its conditions) and for as long as it says once a
+/// permit has ended (FEO-052). A type from before it said is published as it was until its upkeep.
 async fn register(k: &Kernel, req: &SiteRequest) -> Result<SiteResponse> {
     let kind = req.query.get("type").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty());
     let mut tx = k.db.tenant_tx(req.tenant).await?;
     let found: Vec<(Option<String>, String, Option<String>, Option<NaiveDate>, Option<NaiveDate>, Option<String>, Option<String>)> = sqlx::query_as(
-        "select p.number, t.type_name, p.holder_name, p.issued_on, p.expires_on, p.status, p.conditions \
+        "select p.number, t.type_name, case when coalesce(t.register_holder, 'Published') = 'Published' then p.holder_name end, p.issued_on, p.expires_on, p.status, \
+         case when coalesce(t.register_conditions, 'Published') = 'Published' then p.conditions end \
          from e_permit p join e_permit_type t on t.tenant_id = p.tenant_id and t.id = p.permit_type \
          where p.tenant_id = $1 and coalesce(t.in_register, false) and ($2::text is null or lower(t.type_name) = lower($2)) \
+         and (p.status = 'Valid' or t.register_keep_months is null \
+              or (case when p.status = 'Revoked' then coalesce(p.revoked_on, p.expires_on) else p.expires_on end) + make_interval(months => t.register_keep_months::int) >= current_date) \
          order by p.issued_on desc, p.number desc limit $3",
     )
     .bind(req.tenant)
