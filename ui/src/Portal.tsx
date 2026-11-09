@@ -32,6 +32,11 @@ export interface Application {
   stage?: string | null;
   conditions?: string | null;
   renewal_of?: string | null;
+  /** The last day a rejection may be appealed on; none when it may not be. */
+  appeal_until?: string | null;
+  appealed_on?: string | null;
+  appeal_outcome?: string | null;
+  appeal_note?: string | null;
   reviews?: { stage?: string | null; outcome?: string | null; reviewed_on?: string | null; findings?: string | null }[];
 }
 
@@ -153,6 +158,13 @@ export function PortalServices() {
               </ul>
             )}
             {a.conditions && <p>{tr("On condition: {conditions}", { conditions: a.conditions })}</p>}
+            {a.status === "Appealed" && <p className="muted">{tr("Appealed on {day}: someone who took no part in the decision looks at it again.", { day: a.appealed_on ?? "" })}</p>}
+            {a.appeal_outcome && (
+              <p>
+                {a.appeal_outcome === "Overturned" ? tr("Approved on appeal.") : tr("The rejection stands after the appeal.")} {isolate(a.appeal_note ?? "")}
+              </p>
+            )}
+            {a.appeal_until && <Appeal application={a} until={a.appeal_until} busy={busy === `appeal-${a.id}`} onAppeal={(grounds) => void run(`appeal-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/appeal`, { grounds }), tr("Appealed"))} />}
             {a.fee_invoice && <a href={`/portal/invoices/${a.fee_invoice}`}>{tr("The fee's invoice")}</a>}
             {a.fee_drafted && <p className="muted">{tr("The fee's invoice is not issued yet.")}</p>}
             {a.status === "Draft" && (
@@ -242,5 +254,29 @@ export function PortalServices() {
         </form>
       </section>
     </div>
+  );
+}
+
+/** A rejection appealed: the applicant says why it should be looked at again, until its last day. */
+function Appeal({ application, until, busy, onAppeal }: { application: Application; until: string; busy: boolean; onAppeal: (grounds: string) => void }) {
+  const [grounds, setGrounds] = useState("");
+  const id = `appeal-${application.id}`;
+  return (
+    <form
+      className="stack"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (grounds.trim()) onAppeal(grounds.trim());
+      }}
+    >
+      <Field label={tr("Appeal the rejection, until {day}", { day: until })} htmlFor={id}>
+        <textarea id={id} className="input" rows={3} value={grounds} onChange={(e) => setGrounds(e.target.value)} placeholder={tr("Why it should be looked at again")} required />
+      </Field>
+      <div className="row">
+        <Button type="submit" loading={busy} disabled={!grounds.trim()}>
+          {tr("Appeal")}
+        </Button>
+      </div>
+    </form>
   );
 }

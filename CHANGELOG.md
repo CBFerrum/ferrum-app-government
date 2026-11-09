@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0
+
+**The public register** publishes only what each permit type says (FEO-052):
+- Holder on the Register and Conditions on the Register: Published or Left Out, Left Out for a new type.
+- On the Register After It Ends: the months an expired or revoked permit stays listed (12 for a new type; empty keeps it for good). A revoked permit keeps the day it was revoked.
+- A type made before this release keeps publishing its holders and conditions for good, as it did: upkeep marks it so (a backfill).
+
+**Appeals.** A rejection may be appealed within its type's days (Appeal Within, 30 for a new type, 0 to take none), by the applicant on the portal or for them at the counter, saying why.
+- The appeal is decided by someone who took no part in the decision: not its officer, not who decided it, not who reviewed it.
+- Upheld, the rejection stands, and it is not appealed again.
+- Overturned, it is approved as an approval would be (its fee paid, conditions set) and then issued.
+- The applicant is told either way, the officer that it was appealed, and an application keeps who decided it.
+
+Rebuilt with Ferrum-Frontend 9f5a466, with the new words in Arabic and Hindi.
+
 ## 0.2.13
 
 Rebuilt with Ferrum-Frontend c59c9a2: the names of its models, fields and manifest in Arabic and Hindi (140 each in ui/src/locales/names, which the platform serves to every page of the workspace, so a record's labels, the launcher and the bar read in the person's language), and the sentences its pages still showed in English (split around a link or a figure, built in code from a template or word by word) whole and translated (41 words each in ui/src/locales). Translated by the model, to be reviewed by native speakers.

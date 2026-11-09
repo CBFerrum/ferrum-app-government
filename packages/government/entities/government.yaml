@@ -40,7 +40,12 @@
     - {name: stages, type: table, of: PermitStage, label: Review Stages, description: "Passed in order, each by someone holding its role and never by whoever passed the stage before; a stage alongside the one before is passed side by side with it, in any order, by someone else; none: one officer decides"}
     - {name: renewable, type: check, default: false, description: "Its permits may be renewed, from Renew Within days before they expire"}
     - {name: renew_within_days, type: int, default: 60, label: Renew Within (Days)}
-    - {name: in_register, type: check, default: false, label: On The Public Register, description: "Its permits, with their holders' names and conditions, are published in the public register"}
+    - {name: in_register, type: check, default: false, label: On The Public Register, description: "Its permits are published in the public register, with what the two below allow"}
+    - {name: register_holder, type: select, options: [Published, Left Out], default: Left Out, label: Holder on the Register, description: "Whether the holder's name is published with the permit"}
+    - {name: register_conditions, type: select, options: [Published, Left Out], default: Left Out, label: Conditions on the Register, description: "Whether what the permit was issued on condition of is published with it"}
+    - {name: register_keep_months, type: int, default: 12, min: 0, label: On the Register After It Ends (Months),
+       description: "How long an expired or revoked permit stays on the register; empty: for as long as it is kept"}
+    - {name: appeal_within_days, type: int, default: 30, min: 0, label: Appeal Within (Days), description: "Days from a rejection in which it may be appealed; 0: it may not be"}
     - {name: description, type: text}
     - {name: active, type: check, default: true, in_list: true, in_filter: true}
   list: {columns: [type_name, fee, valid_months, active], sort: type_name asc}
@@ -76,7 +81,7 @@
     - {name: applicant_email, type: email, in_filter: true, description: "Their portal sign-in, when they applied there"}
     - {name: details, type: text}
     - {name: documents, type: table, of: ApplicationDocument}
-    - {name: status, type: select, options: [Draft, Submitted, Under Review, Approved, Rejected, Issued, Withdrawn], default: Draft, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: status, type: select, options: [Draft, Submitted, Under Review, Approved, Rejected, Appealed, Issued, Withdrawn], default: Draft, read_only: true, no_copy: true, in_list: true, in_filter: true}
     - {name: submitted_on, type: date, read_only: true, no_copy: true}
     - {name: officer, type: email, read_only: true, no_copy: true, in_list: true, description: "Who took it up"}
     - {name: customer, type: link, to: Customer, read_only: true, no_copy: true, description: "Who the fee is invoiced to: made from the applicant"}
@@ -87,6 +92,12 @@
     - {name: decision_note, type: text, read_only: true, no_copy: true}
     - {name: conditions, type: text, read_only: true, no_copy: true, description: "What the permit is issued on condition of"}
     - {name: decided_on, type: date, read_only: true, no_copy: true}
+    - {name: decided_by, type: email, read_only: true, no_copy: true, description: "Who approved or rejected it"}
+    - {name: appealed_on, type: date, read_only: true, no_copy: true}
+    - {name: appeal_grounds, type: text, read_only: true, no_copy: true, description: "Why the applicant asks for the rejection to be looked at again"}
+    - {name: appeal_outcome, type: select, options: [Upheld, Overturned], read_only: true, no_copy: true, in_filter: true, description: "Upheld: the rejection stands. Overturned: it is approved"}
+    - {name: appeal_decided_by, type: email, read_only: true, no_copy: true, description: "Someone who took no part in the decision appealed"}
+    - {name: appeal_note, type: text, read_only: true, no_copy: true}
     - {name: permit, type: link, to: Permit, read_only: true, no_copy: true}
   actions:
     - {name: submit_application, label: Submit It, permission: write, condition: "doc.status == 'Draft'"}
@@ -97,6 +108,11 @@
     - {name: approve, label: Approve It, permission: write, condition: "doc.status == 'Under Review'",
        params: [{name: note, type: text, label: Note}, {name: conditions, type: text, label: Conditions, description: "What the permit is issued on condition of"}]}
     - {name: reject, label: Reject It, permission: write, condition: "doc.status == 'Under Review'", params: [{name: note, type: text, label: Why, required: true}]}
+    - {name: appeal, label: Appeal the Rejection, permission: write, condition: "doc.status == 'Rejected' && doc.appealed_on == null",
+       params: [{name: grounds, type: text, label: Grounds, required: true, description: "Why the rejection should be looked at again"}]}
+    - {name: decide_appeal, label: Decide the Appeal, permission: write, condition: "doc.status == 'Appealed'",
+       params: [{name: outcome, type: select, options: [Upheld, Overturned], label: Outcome, required: true}, {name: note, type: text, label: Why, required: true},
+                {name: conditions, type: text, label: Conditions, description: "Overturned: what the permit is issued on condition of"}]}
     - {name: issue, label: Issue the Permit, permission: write, condition: "doc.status == 'Approved'"}
     - {name: withdraw, label: Withdraw It, permission: write, condition: "doc.status == 'Draft' || doc.status == 'Submitted'"}
   numbering: {template: "APP-{YYYY}-{seq:5}"}
@@ -118,6 +134,7 @@
     - {name: expires_on, type: date, read_only: true, in_list: true}
     - {name: status, type: select, options: [Valid, Expired, Revoked], default: Valid, read_only: true, no_copy: true, in_list: true, in_filter: true}
     - {name: revoked_reason, type: text, read_only: true, no_copy: true}
+    - {name: revoked_on, type: date, read_only: true, no_copy: true}
     - {name: conditions, type: text, read_only: true, description: "What it was issued on condition of"}
     - {name: renewal_of, type: link, to: Permit, read_only: true, description: "The permit it renews"}
     - {name: renewal, type: link, to: PermitApplication, read_only: true, no_copy: true, description: "Its renewal's application"}
