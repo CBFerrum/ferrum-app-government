@@ -4,7 +4,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { api, docPath, t, isolate } from "@ferrum/client";
-import { Badge, ErrorState, PageLoading, useShellTitle } from "@ferrum/kit";
+import { Badge, ErrorState, ListSkeleton, useShellTitle } from "@ferrum/kit";
 
 export interface Row {
   id: string;
@@ -51,7 +51,7 @@ export function Home() {
     },
     refetchInterval: 30_000,
   });
-  if (q.isPending) return <PageLoading />;
+  if (q.isPending) return <ListSkeleton className="np-page" />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   const app = (r: Row) => `${String(r.number ?? "")} · ${String(r.applicant_name ?? "")}`;
   const reviewing = (r: Row) => (r.stage ? t("{r} · waiting for {value}", { r: app(r), value: String(r.stage) }) : app(r));
