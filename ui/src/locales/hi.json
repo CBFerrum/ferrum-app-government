@@ -48,6 +48,7 @@
   "until {expires_on}": "{expires_on} तक",
   "waiting for {stage}": "{stage} की प्रतीक्षा में",
   "{d} added": "{d} जोड़ा गया",
-  "{valid_months} months": "{valid_months} महीने",
-  "{waiting} to take up · {cases} open cases": "{waiting} उठाने के लिए · {cases} खुले मामले"
+  "{n} open cases": "{n} खुले मामले",
+  "{n} to take up": "{n} उठाने के लिए",
+  "{valid_months} months": "{valid_months} महीने"
 }

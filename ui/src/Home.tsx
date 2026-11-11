@@ -3,7 +3,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api, docPath, formatValue, t, isolate } from "@ferrum/client";
-import { Badge, HomeSkeleton, LoadFailed, PageHead, Queue, QueueGrid, QueueItem, useShellTitle } from "@ferrum/kit";
+import { Badge, HomeSkeleton, LoadFailed, PageHead, PageStack, Queue, QueueGrid, QueueItem, useShellTitle } from "@ferrum/kit";
 
 export interface Row {
   id: string;
@@ -40,25 +40,26 @@ export function Home() {
     refetchInterval: 30_000,
   });
   if (q.isPending) return (
-    <>
+    <PageStack>
       <PageHead title={t("Queues")} />
       <HomeSkeleton queues={4} />
-    </>
+    </PageStack>
   );
   if (q.isError) return (
-    <>
+    <PageStack>
       <PageHead title={t("Queues")} />
       <LoadFailed error={q.error} onRetry={() => void q.refetch()} />
-    </>
+    </PageStack>
   );
   const { submitted, review, approved, cases } = q.data;
   // An application is its applicant's name with its number beneath; one under review also says who it waits for.
   const application = (r: Row, meta: string) => <QueueItem key={r.id} to={`/e/PermitApplication/${r.id}`} title={isolate(String(r.applicant_name || r.number || ""))} meta={isolate(meta)} />;
   const number = (r: Row) => String(r.number ?? "");
+  const summary = [submitted.length && t("{n} to take up", { n: submitted.length }), cases.length && t("{n} open cases", { n: cases.length })].filter(Boolean).join(" · ");
   const late = cases.filter((c) => c.overdue).length;
   return (
-    <>
-      <PageHead title={t("Queues")} description={submitted.length + cases.length > 0 ? t("{waiting} to take up · {cases} open cases", { waiting: submitted.length, cases: cases.length }) : undefined} />
+    <PageStack>
+      <PageHead title={t("Queues")} description={summary ? isolate(summary) : undefined} />
       <QueueGrid>
         <Queue title={t("Open cases")} count={cases.length} tone={late ? "attention" : "default"} more={{ to: "/e/PublicCase", count: cases.length - LIMIT }}>
           {cases.slice(0, LIMIT).map((c) => (
@@ -75,6 +76,6 @@ export function Home() {
           {review.slice(0, LIMIT).map((r) => application(r, r.stage ? `${number(r)} · ${t("waiting for {stage}", { stage: String(r.stage) })}` : number(r)))}
         </Queue>
       </QueueGrid>
-    </>
+    </PageStack>
   );
 }
