@@ -48,6 +48,7 @@
   "until {expires_on}": "حتى {expires_on}",
   "waiting for {stage}": "بانتظار {stage}",
   "{d} added": "أُضيف {d}",
-  "{valid_months} months": "{valid_months} أشهر",
-  "{waiting} to take up · {cases} open cases": "{waiting} لتوليها · {cases} حالات مفتوحة"
+  "{n} open cases": "{n} حالات مفتوحة",
+  "{n} to take up": "{n} لتوليها",
+  "{valid_months} months": "{valid_months} أشهر"
 }
