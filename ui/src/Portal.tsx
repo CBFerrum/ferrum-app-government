@@ -7,7 +7,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { api, errorMessage, formatValue, todayIso, t as tr, isolate } from "@ferrum/client";
-import { Badge, Button, ErrorState, Field, PageLoading, statusTone, toast, useShellTitle } from "@ferrum/kit";
+import { Button, ButtonLink, Field, HomeSection, ListSkeleton, LoadFailed, PageHead, PageStack, Queue, QueueItem, StatusBadge, type Tone, toast } from "@ferrum/kit";
+
+// PermitApplication, Permit and PublicCase `status` as stored (packages/government/entities).
+const APPLICATION_TONES: Record<string, Tone> = { Draft: "neutral", Submitted: "blue", "Under Review": "amber", Approved: "green", Rejected: "red", Appealed: "amber", Issued: "green", Withdrawn: "neutral" };
+const PERMIT_TONES: Record<string, Tone> = { Valid: "green", Expired: "neutral", Revoked: "red" };
+const CASE_TONES: Record<string, Tone> = { Open: "amber", "In Progress": "blue", Resolved: "green", Closed: "neutral" };
 
 const BASE = "/api/app/government/portal";
 
@@ -80,7 +85,6 @@ async function base64(file: File): Promise<string> {
 }
 
 export function PortalServices() {
-  useShellTitle(tr("Your services"));
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["government", "portal"], queryFn: ({ signal }) => api.get<Services>(`${BASE}/home`, {}, signal) });
   const [busy, setBusy] = useState<string | null>(null);
@@ -100,8 +104,19 @@ export function PortalServices() {
   const [subject, setSubject] = useState("");
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
-  if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
-  if (!q.data) return <PageLoading />;
+  const head = <PageHead title={tr("Your services")} description={tr("Apply for permits, follow your applications, and raise cases.")} />;
+  if (q.error) return (
+    <PageStack>
+      {head}
+      <LoadFailed error={q.error} onRetry={() => void q.refetch()} />
+    </PageStack>
+  );
+  if (!q.data) return (
+    <PageStack>
+      {head}
+      <ListSkeleton rows={4} />
+    </PageStack>
+  );
   const { types, applications, permits, cases, categories } = q.data;
   const typeOf = (id?: string | null) => types.find((t) => t.id === id);
   const raise = (e: FormEvent) => {
@@ -112,127 +127,135 @@ export function PortalServices() {
     });
   };
   return (
-    <div className="stack np-page">
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">{tr("Your services")}</h1>
-          <p className="page-sub">{tr("Apply for permits, follow your applications, and raise cases.")}</p>
-        </div>
-      </div>
-      <section className="card card-pad stack" aria-label={tr("Apply for a permit")}>
-        <h3>{tr("Apply for a permit")}</h3>
-        <ul className="stack">
-          {types.map((t) => (
-            <li key={t.id} className="row" style={{ justifyContent: "space-between" }}>
-              <span>
-                <strong>{isolate(t.type_name)}</strong> · {Number(t.fee ?? 0) > 0 ? tr("fee {value}", { value: formatValue({ type: "currency" }, t.fee) }) : tr("no fee")} · {t.valid_months === 1 ? tr("1 month") : tr("{valid_months} months", { valid_months: String(t.valid_months) })}{t.documents.length ? tr(" · needs {value}", { value: t.documents.join(", ") }) : ""}
-              </span>
-              <Button loading={busy === `apply-${t.id}`} onClick={() => void run(`apply-${t.id}`, () => api.post(`${BASE}/applications`, { permit_type: t.id }), tr("Draft started"))}>
-                {tr("Apply")}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </section>
-      {applications.map((a) => {
-        const t = typeOf(a.permit_type);
-        const needed = stillNeeded(t?.documents ?? [], a);
-        return (
-          <section key={a.id} className="card card-pad stack" aria-label={tr("Application {value}", { value: a.number ?? "" })}>
-            <header className="row" style={{ justifyContent: "space-between" }}>
-              <h3>
-                {t?.type_name ?? tr("Permit")} · {isolate(a.number ?? "")}
-              </h3>
-              <Badge tone={statusTone(a.status)}>{isolate(a.status ?? "")}</Badge>
-            </header>
-            {a.decision_note && <p>{isolate(a.decision_note)}</p>}
-            {a.status === "Under Review" && a.stage && <p className="muted">{tr("Waiting for: {stage}", { stage: a.stage })}</p>}
-            {(a.reviews ?? []).length > 0 && (
-              <ul className="stack">
-                {(a.reviews ?? []).map((r, i) => (
-                  <li key={i}>
-                    {isolate(r.stage ?? "")} · {isolate(r.outcome ?? "")} · {isolate(r.reviewed_on ?? "")}
-                    {r.findings ? tr(" · found: {findings}", { findings: r.findings }) : ""}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {a.conditions && <p>{tr("On condition: {conditions}", { conditions: a.conditions })}</p>}
-            {a.status === "Appealed" && <p className="muted">{tr("Appealed on {day}: someone who took no part in the decision looks at it again.", { day: a.appealed_on ?? "" })}</p>}
-            {a.appeal_outcome && (
-              <p>
-                {a.appeal_outcome === "Overturned" ? tr("Approved on appeal.") : tr("The rejection stands after the appeal.")} {isolate(a.appeal_note ?? "")}
-              </p>
-            )}
-            {a.appeal_until && <Appeal application={a} until={a.appeal_until} busy={busy === `appeal-${a.id}`} onAppeal={(grounds) => void run(`appeal-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/appeal`, { grounds }), tr("Appealed"))} />}
-            {a.fee_invoice && <a href={`/portal/invoices/${a.fee_invoice}`}>{tr("The fee's invoice")}</a>}
-            {a.fee_drafted && <p className="muted">{tr("The fee's invoice is not issued yet.")}</p>}
-            {a.status === "Draft" && (
-              <>
-                {(t?.documents ?? []).map((d) => (
-                  <Field key={d} label={`${d}${needed.includes(d) ? " (still needed)" : " ✓"}`}>
-                    <input
-                      type="file"
-                      className="input"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file)
-                          void run(
-                            `doc-${a.id}-${d}`,
-                            async () => api.post(`${BASE}/applications/${a.id}/documents`, { document: d, file_name: file.name, content_type: file.type, data: await base64(file) }),
-                            tr("{d} added", { d }),
-                          );
-                      }}
-                    />
-                  </Field>
-                ))}
-                <div className="row">
-                  <Button variant="primary" disabled={needed.length > 0} loading={busy === `submit-${a.id}`} onClick={() => void run(`submit-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/submit`, {}), tr("Submitted"))}>
-                    {tr("Submit")}
-                  </Button>
-                  <Button loading={busy === `withdraw-${a.id}`} onClick={() => void run(`withdraw-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/withdraw`, {}), tr("Withdrawn"))}>
-                    {tr("Withdraw")}
-                  </Button>
-                </div>
-              </>
-            )}
-          </section>
-        );
-      })}
+    <PageStack gap="lg">
+      {head}
+      <Queue title={tr("Apply for a permit")} empty={tr("No permits are open for application yet")}>
+        {types.map((t) => {
+          const terms = `${Number(t.fee ?? 0) > 0 ? tr("fee {value}", { value: formatValue({ type: "currency" }, t.fee) }) : tr("no fee")} · ${t.valid_months === 1 ? tr("1 month") : tr("{valid_months} months", { valid_months: String(t.valid_months) })}${t.documents.length ? tr(" · needs {value}", { value: t.documents.join(", ") }) : ""}`;
+          return (
+            <QueueItem
+              key={t.id}
+              title={isolate(t.type_name)}
+              meta={isolate(terms)}
+              action={
+                <Button loading={busy === `apply-${t.id}`} onClick={() => void run(`apply-${t.id}`, () => api.post(`${BASE}/applications`, { permit_type: t.id }), tr("Draft started"))}>
+                  {tr("Apply")}
+                </Button>
+              }
+            />
+          );
+        })}
+      </Queue>
+      {applications.length > 0 && (
+        <HomeSection title={tr("Your applications")} count={applications.length}>
+          <PageStack>
+            {applications.map((a) => {
+              const t = typeOf(a.permit_type);
+              const needed = stillNeeded(t?.documents ?? [], a);
+              return (
+                <section key={a.id} className="card" aria-label={tr("Application {value}", { value: a.number ?? "" })}>
+                  <header className="card-head justify-between">
+                    <h3>
+                      {t?.type_name ?? tr("Permit")} · {isolate(a.number ?? "")}
+                    </h3>
+                    <StatusBadge value={a.status} tones={APPLICATION_TONES} />
+                  </header>
+                  <div className="card-body stack">
+                    {a.decision_note && <p>{isolate(a.decision_note)}</p>}
+                    {a.status === "Under Review" && a.stage && <p className="muted">{tr("Waiting for: {stage}", { stage: a.stage })}</p>}
+                    {(a.reviews ?? []).length > 0 && (
+                      <ul className="stack text-sm">
+                        {(a.reviews ?? []).map((r, i) => (
+                          <li key={i}>
+                            {isolate(r.stage ?? "")} · {isolate(r.outcome ?? "")} · {isolate(r.reviewed_on ?? "")}
+                            {r.findings ? tr(" · found: {findings}", { findings: r.findings }) : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {a.conditions && <p>{tr("On condition: {conditions}", { conditions: a.conditions })}</p>}
+                    {a.status === "Appealed" && <p className="muted">{tr("Appealed on {day}: someone who took no part in the decision looks at it again.", { day: a.appealed_on ?? "" })}</p>}
+                    {a.appeal_outcome && (
+                      <p>
+                        {a.appeal_outcome === "Overturned" ? tr("Approved on appeal.") : tr("The rejection stands after the appeal.")} {isolate(a.appeal_note ?? "")}
+                      </p>
+                    )}
+                    {a.appeal_until && <Appeal application={a} until={a.appeal_until} busy={busy === `appeal-${a.id}`} onAppeal={(grounds) => void run(`appeal-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/appeal`, { grounds }), tr("Appealed"))} />}
+                    {a.fee_invoice && (
+                      <div>
+                        <ButtonLink href={`/portal/invoices/${a.fee_invoice}`}>{tr("The fee's invoice")}</ButtonLink>
+                      </div>
+                    )}
+                    {a.fee_drafted && <p className="muted">{tr("The fee's invoice is not issued yet.")}</p>}
+                    {a.status === "Draft" && (
+                      <>
+                        {(t?.documents ?? []).map((d) => (
+                          <Field key={d} label={`${d}${needed.includes(d) ? " (still needed)" : " ✓"}`}>
+                            <input
+                              type="file"
+                              className="input"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file)
+                                  void run(
+                                    `doc-${a.id}-${d}`,
+                                    async () => api.post(`${BASE}/applications/${a.id}/documents`, { document: d, file_name: file.name, content_type: file.type, data: await base64(file) }),
+                                    tr("{d} added", { d }),
+                                  );
+                              }}
+                            />
+                          </Field>
+                        ))}
+                        <div className="row">
+                          <Button variant="primary" disabled={needed.length > 0} loading={busy === `submit-${a.id}`} onClick={() => void run(`submit-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/submit`, {}), tr("Submitted"))}>
+                            {tr("Submit")}
+                          </Button>
+                          <Button loading={busy === `withdraw-${a.id}`} onClick={() => void run(`withdraw-${a.id}`, () => api.post(`${BASE}/applications/${a.id}/withdraw`, {}), tr("Withdrawn"))}>
+                            {tr("Withdraw")}
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+          </PageStack>
+        </HomeSection>
+      )}
       {permits.length > 0 && (
-        <section className="card card-pad stack" aria-label={tr("Your permits")}>
-          <h3>{tr("Your permits")}</h3>
-          <ul className="stack">
-            {permits.map((p) => (
-              <li key={p.id} className="stack" style={{ gap: 4 }}>
-                <span>
-                  {isolate(p.number ?? "")} · {typeOf(p.permit_type)?.type_name ?? ""} {tr("· until {expires_on}", { expires_on: p.expires_on ?? "" })} <Badge tone={statusTone(p.status)}>{isolate(p.status ?? "")}</Badge>
-                </span>
-                {p.conditions && <span className="muted">{tr("On condition: {conditions}", { conditions: p.conditions })}</span>}
-                {canRenew(p, todayIso()) && (
-                  <span>
+        <Queue title={tr("Your permits")} count={permits.length}>
+          {permits.map((p) => {
+            const renew = canRenew(p, todayIso());
+            const notes = [tr("until {expires_on}", { expires_on: p.expires_on ?? "" }), p.conditions && tr("On condition: {conditions}", { conditions: p.conditions }), !renew && p.renew_from && !p.renewal && tr("It may be renewed from {renew_from}.", { renew_from: p.renew_from })].filter(Boolean).join(" · ");
+            return (
+              <QueueItem
+                key={p.id}
+                title={isolate(`${p.number ?? ""} · ${typeOf(p.permit_type)?.type_name ?? ""}`)}
+                meta={isolate(notes)}
+                trailing={<StatusBadge value={p.status} tones={PERMIT_TONES} />}
+                action={
+                  renew ? (
                     <Button loading={busy === `renew-${p.id}`} onClick={() => void run(`renew-${p.id}`, () => api.post(`${BASE}/permits/${p.id}/renew`, {}), tr("Renewal started"))}>
                       {tr("Renew it")}
                     </Button>
-                  </span>
-                )}
-                {!canRenew(p, todayIso()) && p.renew_from && !p.renewal && <span className="muted">{tr("It may be renewed from {renew_from}.", { renew_from: p.renew_from })}</span>}
-              </li>
-            ))}
-          </ul>
-        </section>
+                  ) : undefined
+                }
+              />
+            );
+          })}
+        </Queue>
       )}
-      <section className="card card-pad stack" aria-label={tr("Your cases")}>
-        <h3>{tr("Your cases")}</h3>
-        <ul className="stack">
-          {cases.map((c) => (
-            <li key={c.id}>
-              {tr("{number} · {subject} · due {due_on}", { number: c.number ?? "", subject: c.subject ?? "", due_on: c.due_on ?? "" })} <Badge tone={statusTone(c.status)}>{isolate(c.status ?? "")}</Badge>
-              {c.resolution ? ` · ${c.resolution}` : ""}
-            </li>
-          ))}
-        </ul>
-        <form className="stack" onSubmit={raise}>
+      <Queue title={tr("Your cases")} count={cases.length} empty={tr("No cases yet")}>
+        {cases.map((c) => (
+          <QueueItem key={c.id} title={isolate(c.subject ?? "")} meta={isolate(`${c.number ?? ""} · ${tr("due {day}", { day: c.due_on ?? "" })}${c.resolution ? ` · ${c.resolution}` : ""}`)} trailing={<StatusBadge value={c.status} tones={CASE_TONES} />} />
+        ))}
+      </Queue>
+      <form className="card" onSubmit={raise}>
+        <header className="card-head">
+          <h2>{tr("Raise a case")}</h2>
+        </header>
+        <div className="card-body stack">
           <Field label={tr("About")}>
             <select className="input" value={category || categories[0]?.id || ""} onChange={(e) => setCategory(e.target.value)}>
               {categories.map((c) => (
@@ -248,12 +271,14 @@ export function PortalServices() {
           <Field label={tr("What happened")}>
             <textarea className="input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
           </Field>
-          <Button type="submit" variant="primary" loading={busy === "case"} disabled={!subject.trim() || !categories.length}>
-            {tr("Raise a case")}
-          </Button>
-        </form>
-      </section>
-    </div>
+          <div>
+            <Button type="submit" variant="primary" loading={busy === "case"} disabled={!subject.trim() || !categories.length}>
+              {tr("Raise a case")}
+            </Button>
+          </div>
+        </div>
+      </form>
+    </PageStack>
   );
 }
 
