@@ -45,7 +45,7 @@ const portalRoutes = [
   {
     path: "/",
     element: (
-      <main>
+      <main className="portal-page">
         <Started />
         <Outlet />
       </main>
