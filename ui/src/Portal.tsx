@@ -7,7 +7,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { api, errorMessage, formatValue, todayIso, t as tr, isolate } from "@ferrum/client";
-import { Badge, Button, ErrorState, Field, PageLoading, statusTone, toast, useShellTitle } from "@ferrum/kit";
+import { Badge, Button, ErrorState, Field, ListSkeleton, statusTone, toast, useShellTitle } from "@ferrum/kit";
+
+// PermitApplication, Permit and PublicCase `status` as stored (packages/government/entities).
+const APPLICATION_TONES = { Draft: "neutral", Submitted: "blue", "Under Review": "amber", Approved: "green", Rejected: "red", Appealed: "amber", Issued: "green", Withdrawn: "neutral" } as const;
+const PERMIT_TONES = { Valid: "green", Expired: "neutral", Revoked: "red" } as const;
+const CASE_TONES = { Open: "amber", "In Progress": "blue", Resolved: "green", Closed: "neutral" } as const;
 
 const BASE = "/api/app/government/portal";
 
@@ -101,7 +106,7 @@ export function PortalServices() {
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
   if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
-  if (!q.data) return <PageLoading />;
+  if (!q.data) return <ListSkeleton className="np-page" />;
   const { types, applications, permits, cases, categories } = q.data;
   const typeOf = (id?: string | null) => types.find((t) => t.id === id);
   const raise = (e: FormEvent) => {
@@ -143,7 +148,7 @@ export function PortalServices() {
               <h3>
                 {t?.type_name ?? tr("Permit")} · {isolate(a.number ?? "")}
               </h3>
-              <Badge tone={statusTone(a.status)}>{isolate(a.status ?? "")}</Badge>
+              <Badge tone={statusTone(a.status, APPLICATION_TONES)}>{isolate(a.status ?? "")}</Badge>
             </header>
             {a.decision_note && <p>{isolate(a.decision_note)}</p>}
             {a.status === "Under Review" && a.stage && <p className="muted">{tr("Waiting for: {stage}", { stage: a.stage })}</p>}
@@ -206,7 +211,7 @@ export function PortalServices() {
             {permits.map((p) => (
               <li key={p.id} className="stack" style={{ gap: 4 }}>
                 <span>
-                  {isolate(p.number ?? "")} · {typeOf(p.permit_type)?.type_name ?? ""} {tr("· until {expires_on}", { expires_on: p.expires_on ?? "" })} <Badge tone={statusTone(p.status)}>{isolate(p.status ?? "")}</Badge>
+                  {isolate(p.number ?? "")} · {typeOf(p.permit_type)?.type_name ?? ""} {tr("· until {expires_on}", { expires_on: p.expires_on ?? "" })} <Badge tone={statusTone(p.status, PERMIT_TONES)}>{isolate(p.status ?? "")}</Badge>
                 </span>
                 {p.conditions && <span className="muted">{tr("On condition: {conditions}", { conditions: p.conditions })}</span>}
                 {canRenew(p, todayIso()) && (
@@ -227,7 +232,7 @@ export function PortalServices() {
         <ul className="stack">
           {cases.map((c) => (
             <li key={c.id}>
-              {tr("{number} · {subject} · due {due_on}", { number: c.number ?? "", subject: c.subject ?? "", due_on: c.due_on ?? "" })} <Badge tone={statusTone(c.status)}>{isolate(c.status ?? "")}</Badge>
+              {tr("{number} · {subject} · due {due_on}", { number: c.number ?? "", subject: c.subject ?? "", due_on: c.due_on ?? "" })} <Badge tone={statusTone(c.status, CASE_TONES)}>{isolate(c.status ?? "")}</Badge>
               {c.resolution ? ` · ${c.resolution}` : ""}
             </li>
           ))}
