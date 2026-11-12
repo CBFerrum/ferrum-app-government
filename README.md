@@ -72,6 +72,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.3.2** | Rebuilt on the tuned design system: better menu icons, a lighter first page, a visible scroll cue, cleaner print. |
 | **0.3.1** | The redesigned interface: the upgraded design system, shaped loading, told-apart states. |
 | **0.3.0** | The register publishes what each type says, for as long as it says; appeals decided by someone who took no part. |
 | **0.2.13** | Its names in Arabic and Hindi; the last English sentences translated. |
