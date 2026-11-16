@@ -1,5 +1,5 @@
 //! Permits. An application is submitted with every document its type needs, and its fee, if any,
-//! is invoiced through ERP to a customer made from the applicant. An officer takes it up; when its
+//! is invoiced through ERP to the applicant's customer. An officer takes it up; when its
 //! type has review stages, each is passed in order by someone holding the stage's role, never by
 //! whoever passed the stage before, and a site inspection says what it found. Stages alongside the
 //! one before are passed side by side, in any order, each by someone else. It is approved once
@@ -13,10 +13,11 @@
 use crate::obj;
 use async_trait::async_trait;
 use chrono::{Duration, Months, NaiveDate};
+use ferrum_app_erp::portal::customer_for;
 use ferrum_domain::flow::created;
-use ferrum_domain::util::{d, elevated, id, money, rows, s, sys};
+use ferrum_domain::util::{d, elevated, id, money, rows, s};
 use ferrum_kernel::value::parse_date;
-use ferrum_kernel::{Ctx, Doc, DocHook, Error, Filter, HookCtx, Kernel, Result, Tx, notify};
+use ferrum_kernel::{Ctx, Doc, DocHook, Error, HookCtx, Kernel, Result, Tx, notify};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -476,7 +477,7 @@ async fn submit(k: &Kernel, ctx: &Ctx, tx: &mut Tx, doc: &Doc) -> Result<(Option
     let Some((Some(company), Some(default_item))) = settings else {
         return Err(Error::invalid("set the company and the fee item in Government Settings first"));
     };
-    let customer = customer_of(k, ctx, tx, doc).await?;
+    let (customer, _) = customer_for(k, ctx, tx, s(doc, "applicant_name").unwrap_or_default(), s(doc, "applicant_email"), None).await?;
     let currency: Option<Uuid> = sqlx::query_scalar("select default_currency from e_company where tenant_id = $1 and id = $2")
         .bind(ctx.tenant)
         .bind(company)
@@ -495,25 +496,6 @@ async fn submit(k: &Kernel, ctx: &Ctx, tx: &mut Tx, doc: &Doc) -> Result<(Option
         )
         .await?;
     Ok((Some(inv), Some(customer)))
-}
-
-/// The applicant's customer: the one their address names, or one made from them now.
-async fn customer_of(k: &Kernel, ctx: &Ctx, tx: &mut Tx, doc: &Doc) -> Result<Uuid> {
-    if let Some(email) = s(doc, "applicant_email").map(str::to_lowercase) {
-        let found = k.find_tx(&sys(ctx), tx, "Customer", &[Filter::eq("email", email)], Some("created_at asc"), 1).await?;
-        if let Some(c) = found.first().and_then(|c| id(c, "id")) {
-            return Ok(c);
-        }
-    }
-    let made = k
-        .insert_tx(
-            ctx,
-            tx,
-            "Customer",
-            obj(json!({"customer_name": s(doc, "applicant_name"), "customer_type": "Individual", "email": s(doc, "applicant_email")})),
-        )
-        .await?;
-    id(&made, "id").ok_or_else(|| Error::internal("a customer without an id"))
 }
 
 pub struct PermitHook;

@@ -52,7 +52,7 @@ invoiced through Ferrum ERP. Cases are due within their category's days.
 | **Version** | 0.3.2 |
 | **Kind** | Its own interface at `/government/` (the officers' queues); the portal's "Your services" at `/portal/services/`; every record in Ferrum's lists and forms |
 | **What it adds** | 10 record types (5 documents, 4 child tables, 1 settings record), 3 roles, 1 menu |
-| **Depends on** | Ferrum platform `>=0.3.2, <0.4`; ERP `>=0.1` (installing Government installs ERP) |
+| **Depends on** | Ferrum platform `>=0.3.2, <0.4`; ERP `>=0.28.3` (installing Government installs ERP) |
 | **Works with** | ERP (customers, items, companies, sales invoices), the platform's notifications and portal |
 | **Languages** | English, Arabic, Hindi (words and record names); right-to-left layout |
 | **Tests** | 4 Rust tests (one walks a town hall on PostgreSQL) and a UI suite |
@@ -138,8 +138,9 @@ invoiced through Ferrum ERP. Cases are due within their category's days.
   show only when they apply.
 - **Submitted complete.** An application is submitted only with every document the type needs, each with its file, and
   only for a type that is open. Once submitted, it keeps what was applied for.
-- **The fee.** Submitting invoices the fee through ERP to the customer the applicant's address already names, or one made
-  from them. Without a fee, no invoice is made. Without a company and a fee item in Government Settings, submitting is
+- **The fee.** Submitting invoices the fee through ERP to the customer the applicant's address already names (never a
+  disabled one nor a web shop's guest), or one made from them; two submissions at once for one address make one
+  customer. Without a fee, no invoice is made. Without a company and a fee item in Government Settings, submitting is
   refused with a message that says where to set them.
 - **Taken up.** An officer takes a submitted application up and their email is kept on it. The "Waiting For" field says
   which stage it is at.

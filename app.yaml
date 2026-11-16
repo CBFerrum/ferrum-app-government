@@ -1,6 +1,6 @@
 id: government
 name: Government
-version: 0.3.2
+version: 0.3.3
 publisher: cbferrum
 summary: "Permits applied for, reviewed in stages, paid through ERP, issued on conditions and renewed, a public register, cases with deadlines, and a citizens' portal"
 description: README.md
@@ -10,8 +10,8 @@ homepage: https://github.com/CBFerrum/ferrum-app-government
 support: https://github.com/CBFerrum/ferrum-app-government/issues
 runtime: native
 platform: ">=0.3.2, <0.4"
-# Fees are invoiced through ERP: installing it installs ERP.
-requires: {erp: ">=0.1"}
+# Fees are invoiced through ERP, to the customer its portal::customer_for (0.28.3) gives: installing it installs ERP.
+requires: {erp: ">=0.28.3"}
 packages: [government]
 uninstall: ask
 # Its own interface at /government/: the officers' queues; and the portal's "Your services".
