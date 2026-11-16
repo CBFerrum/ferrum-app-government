@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.3.2-4338ca?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.4-4338ca?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -374,6 +374,7 @@ version bought and how it is run.
 
 ### ✅ Recently shipped
 
+- [x] **0.3.4** Rebuilt on Ferrum-Frontend 06bd1a2: the officers' and the portal's pages start through `mountApp`; no routes to the screens apps no longer have.
 - [x] **0.3.2** Tuned design system: better menu icons, lighter first page, cleaner print.
 - [x] **0.3.1** The redesigned interface with shaped loading and told-apart states.
 - [x] **0.3.0** The register publishes what each type says, for as long as it says; appeals decided by someone who took no part.
