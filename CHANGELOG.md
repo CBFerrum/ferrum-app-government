@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3
+
+An applicant's customer is ERP's to find or make (`portal::customer_for`, ERP 0.28.3), the one way every app that bills a person has; Government's own copy is gone. Needs ERP 0.28.3 (`requires: {erp: ">=0.28.3"}`).
+
+- **Never a disabled customer nor a web shop's guest.** The copy took the oldest customer with the applicant's email, whatever it was. Now such a customer is passed over and the applicant gets one of their own, found again next time.
+- **Two submissions at once for one address make one customer.** The copy took no lock, so each made one; now the second waits for the first and finds its customer.
+
 ## 0.3.2
 
 Rebuilt with Ferrum-Frontend 9e7190c, the design system as tuned after the landed build was reviewed. The left menu's icons are chosen so that none repeats on more than three rows and each fits its row; their drawings load beside the first page instead of inside it, so the page starts lighter; a row that scrolls sideways fades at the edge where there is more, in every browser and with reduced motion; a printed record leaves out empty fields and keeps its totals with the table; menus and popovers sit inside the page's landmarks for assistive technology; a selection bar folds what does not fit into More on a narrow screen. Nothing else changes.

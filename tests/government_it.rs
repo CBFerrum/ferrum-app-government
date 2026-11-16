@@ -282,6 +282,47 @@ async fn scenario() {
         )
         .await["id"]);
     refused(t.act(&officer, "PermitApplication", counter, "submit_application", Value::Null).await, "invalid", "still needed: Site plan");
+    // A disabled customer with the address is not the applicant's: one of their own is made.
+    let closed_account = t.insert(&a, "Customer", json!({"customer_name": "Gil's old account", "email": "gil@home.test", "disabled": true})).await;
+    let gil = json!({"permit_type": signage.to_string(), "applicant_name": "Gil Ray", "applicant_email": "gil@home.test"});
+    let gil = uid(&t.insert(&officer, "PermitApplication", gil).await["id"]);
+    t.act(&officer, "PermitApplication", gil, "submit_application", Value::Null).await.unwrap();
+    let theirs = t.get("Customer", uid(&t.get("PermitApplication", gil).await["customer"])).await;
+    assert!(theirs["id"] != closed_account["id"] && theirs["customer_name"] == "Gil Ray", "{theirs:?}");
+    // Two applications for one address submitted at once make one customer: the second waits for the
+    // first, then finds what it made.
+    let noor = || json!({"permit_type": signage.to_string(), "applicant_name": "Noor Ali", "applicant_email": "noor@home.test"});
+    let (one, two) = (uid(&t.insert(&officer, "PermitApplication", noor()).await["id"]), uid(&t.insert(&officer, "PermitApplication", noor()).await["id"]));
+    let mut first = k.db.tenant_tx(tenant).await.unwrap();
+    k.run_action_tx(&officer, &mut first, "PermitApplication", one, "submit_application", &Value::Null).await.unwrap();
+    let pid: i32 = sqlx::query_scalar("select pg_backend_pid()").fetch_one(&mut *first).await.unwrap();
+    let second = {
+        let (k, officer) = (k.clone(), officer.clone());
+        tokio::spawn(async move {
+            let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+            k.run_action_tx(&officer, &mut tx, "PermitApplication", two, "submit_application", &Value::Null).await.unwrap();
+            tx.commit().await.unwrap();
+        })
+    };
+    // Until the second waits, or (without a lock) is done: either comes, however loaded the machine.
+    let mut waited = false;
+    for _ in 0..2400 {
+        let waits: bool = sqlx::query_scalar("select exists (select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid)))")
+            .bind(pid)
+            .fetch_one(&k.db.pool)
+            .await
+            .unwrap();
+        if waits || second.is_finished() {
+            waited = waits;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    first.commit().await.unwrap();
+    second.await.unwrap();
+    let billed = (t.get("PermitApplication", one).await["customer"].clone(), t.get("PermitApplication", two).await["customer"].clone());
+    assert!(billed.0.is_string() && billed.0 == billed.1, "one customer for one address: {billed:?}");
+    assert!(waited, "the second submission waited for the first");
 
     // ───────────── review, the fee, and the permit ─────────────
     refused(t.k.update(&officer, "PermitApplication", app, obj(json!({"details": "Two storeys"})), None).await, "invalid", "keeps what was applied for");
