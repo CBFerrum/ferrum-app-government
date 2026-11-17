@@ -19,7 +19,9 @@
 
 Ferrum Government is for a municipality, a licensing board or any public office that takes applications and
 citizens' requests. Citizens apply and follow their applications on the portal. Officers review in stages, and fees are
-invoiced through Ferrum ERP. Cases are due within their category's days.
+invoiced through Ferrum ERP. Cases are due within their category's days. The office defines its own permit types (what
+is applied for, the fee, the documents, the review stages) and case categories; none are built in. It reviews and issues
+permits and works citizens' requests. Inspections after issue, enforcement and a licensee register are not part of it.
 
 [💡 Why](#-why-government) · [📸 Screenshots](#-screenshots) · [✨ Features](#-features) · [📊 Compare](#-how-it-compares) · [📍 Roadmap](#-roadmap) · [🚀 Install](#-install) · [🔧 Develop](#-develop)
 
@@ -49,7 +51,7 @@ invoiced through Ferrum ERP. Cases are due within their category's days.
 
 | | |
 |---|---|
-| **Version** | 0.3.2 |
+| **Version** | 0.3.4 |
 | **Kind** | Its own interface at `/government/` (the officers' queues); the portal's "Your services" at `/portal/services/`; every record in Ferrum's lists and forms |
 | **What it adds** | 10 record types (5 documents, 4 child tables, 1 settings record), 3 roles, 1 menu |
 | **Depends on** | Ferrum platform `>=0.3.2, <0.4`; ERP `>=0.28.3` (installing Government installs ERP) |
@@ -176,7 +178,6 @@ invoiced through Ferrum ERP. Cases are due within their category's days.
 - **Only what each type allows.** Holder names and conditions appear only where the type publishes them. Expired and
   revoked permits stay for the months the type says.
 - **Spreadsheet-safe CSV.** Cells that a spreadsheet would run as formulas are made plain.
-- **Types from before** a type could say what it publishes keep publishing as they did, until an administrator changes it.
 
 ### 📨 Citizens' cases
 
@@ -375,6 +376,7 @@ version bought and how it is run.
 ### ✅ Recently shipped
 
 - [x] **0.3.4** Rebuilt on Ferrum-Frontend 06bd1a2: the officers' and the portal's pages start through `mountApp`; no routes to the screens apps no longer have.
+- [x] **0.3.3** An applicant's customer is found or made through ERP's portal functions: never a disabled customer or a web shop's guest, and one customer for two submissions at once.
 - [x] **0.3.2** Tuned design system: better menu icons, lighter first page, cleaner print.
 - [x] **0.3.1** The redesigned interface with shaped loading and told-apart states.
 - [x] **0.3.0** The register publishes what each type says, for as long as it says; appeals decided by someone who took no part.
