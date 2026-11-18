@@ -156,7 +156,6 @@ async fn scenario() {
     let k = Kernel::boot(db, catalog, hooks, KernelSettings::default(), None).await.expect("boot");
     k.set_file_store(Arc::new(MemFiles::default()));
     ferrum_domain::maintenance(&k).await.expect("partitions");
-    ferrum_app_erp::maintenance(&k).await.expect("partitions");
     let tenant = k
         .create_tenant(NewTenant {
             slug: "town".into(),
@@ -405,7 +404,7 @@ async fn scenario() {
     let p3 = uid(&call(&k, Some(&ria), "POST", "portal/applications", json!({"permit_type": party.to_string()})).await.unwrap()["id"]);
     call(&k, Some(&ria), "POST", &format!("portal/applications/{p3}/withdraw"), json!({})).await.unwrap();
     assert_eq!(t.get("PermitApplication", p3).await["status"], "Withdrawn");
-    ferrum_app_government::maintenance_on(&k, today + chrono::Duration::days(40)).await.unwrap();
+    ferrum_app_government::maintenance_on(&k, tenant, today + chrono::Duration::days(40)).await.unwrap();
     assert_eq!(t.get("Permit", short).await["status"], "Expired", "a month's permit, forty days on");
     assert_eq!(t.get("Permit", uid(&permit["id"])).await["status"], "Valid", "the building permit runs two years");
     t.act(&officer, "Permit", uid(&permit["id"]), "revoke", json!({"reason": "Built beyond the plan"})).await.unwrap();
@@ -541,8 +540,8 @@ async fn scenario() {
     assert_eq!((before["register_holder"].clone(), before["register_conditions"].clone()), (json!("Published"), json!("Published")), "as before");
     assert_eq!(t.get("PermitType", party).await["register_holder"], json!("Left Out"), "made since: not published unless said");
     // A month's permit renews from sixty days before its end: Kim is told once, and renews it.
-    ferrum_app_government::maintenance_on(&k, today).await.unwrap();
-    ferrum_app_government::maintenance_on(&k, today).await.unwrap();
+    ferrum_app_government::maintenance_on(&k, tenant, today).await.unwrap();
+    ferrum_app_government::maintenance_on(&k, tenant, today).await.unwrap();
     assert_eq!(told(kiosk_permit).await.len(), 1, "told once that it may be renewed");
     let mine = call(&k, Some(&kim), "GET", "portal/home", Value::Null).await.unwrap();
     assert_eq!(
@@ -644,7 +643,7 @@ async fn scenario() {
         )
         .await["id"]);
     assert_eq!(t.get("PublicCase", loud).await["due_on"], (today + chrono::Duration::days(3)).to_string());
-    ferrum_app_government::maintenance_on(&k, today + chrono::Duration::days(10)).await.unwrap();
+    ferrum_app_government::maintenance_on(&k, tenant, today + chrono::Duration::days(10)).await.unwrap();
     assert_eq!(t.get("PublicCase", loud).await["overdue"], true, "open past its day");
     assert_eq!(t.get("PublicCase", pothole).await["overdue"], false, "resolved in time");
     // A case resolved late is late no longer once resolved.

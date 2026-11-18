@@ -22,7 +22,7 @@ mod site;
 
 use chrono::NaiveDate;
 use ferrum_domain::reports::ReportSource;
-use ferrum_kernel::{Ctx, Doc, Error, HookRegistry, Kernel, Result};
+use ferrum_kernel::{Ctx, Doc, HookRegistry, Kernel, Result};
 use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -53,42 +53,28 @@ pub fn reports() -> Vec<Arc<dyn ReportSource>> {
     vec![]
 }
 
-/// Upkeep, by each workspace's own day: permits past their expiry expired, holders told when their
-/// renewal opens, and late cases marked overdue.
-pub async fn maintenance(k: &Kernel) -> Result<()> {
-    run(k, None).await
+/// One workspace's upkeep, which the platform runs about once a minute where Government is installed, on whichever
+/// replica is free, and may run again; by the workspace's own day: permits past their expiry expired, holders told when
+/// their renewal opens, and late cases marked overdue.
+pub async fn maintenance(k: &Kernel, tenant: Uuid) -> Result<()> {
+    run(k, tenant, None).await
 }
 
-/// [`maintenance`] as of `today`, in every workspace.
-pub async fn maintenance_on(k: &Kernel, today: NaiveDate) -> Result<()> {
-    run(k, Some(today)).await
+/// [`maintenance`] as of `today`.
+pub async fn maintenance_on(k: &Kernel, tenant: Uuid, today: NaiveDate) -> Result<()> {
+    run(k, tenant, Some(today)).await
 }
 
-async fn run(k: &Kernel, on: Option<NaiveDate>) -> Result<()> {
-    let mut tx = k.db.system_tx().await?;
-    let tenants: Vec<Uuid> = sqlx::query_scalar("select id from tenant where status = 'active' order by id").fetch_all(&mut *tx).await?;
+async fn run(k: &Kernel, tenant: Uuid, on: Option<NaiveDate>) -> Result<()> {
+    let schema = k.registry.schema(tenant).await?;
+    let ctx = Ctx::system(tenant, schema);
+    let today = on.unwrap_or_else(|| ctx.today());
+    let mut tx = k.db.tenant_tx(tenant).await?;
+    permits::expire(k, &ctx, &mut tx, today).await?;
+    permits::remind(k, &ctx, &mut tx, today).await?;
+    cases::mark_overdue(k, &ctx, &mut tx, today).await?;
     tx.commit().await?;
-    let mut first_error: Option<Error> = None;
-    for tenant in tenants {
-        let run = async {
-            let schema = k.registry.schema(tenant).await?;
-            if !schema.packages.iter().any(|p| p == "government") {
-                return Ok(());
-            }
-            let ctx = Ctx::system(tenant, schema);
-            let today = on.unwrap_or_else(|| ctx.today());
-            let mut tx = k.db.tenant_tx(tenant).await?;
-            permits::expire(k, &ctx, &mut tx, today).await?;
-            permits::remind(k, &ctx, &mut tx, today).await?;
-            cases::mark_overdue(k, &ctx, &mut tx, today).await?;
-            tx.commit().await?;
-            Ok::<(), Error>(())
-        };
-        if let Err(e) = run.await {
-            first_error.get_or_insert(e);
-        }
-    }
-    first_error.map_or(Ok(()), Err)
+    Ok(())
 }
 
 /// A document from JSON.

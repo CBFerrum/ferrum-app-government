@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.3.4-4338ca?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-4338ca?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -51,10 +51,10 @@ permits and works citizens' requests. Inspections after issue, enforcement and a
 
 | | |
 |---|---|
-| **Version** | 0.3.4 |
+| **Version** | 0.4.0 |
 | **Kind** | Its own interface at `/government/` (the officers' queues); the portal's "Your services" at `/portal/services/`; every record in Ferrum's lists and forms |
 | **What it adds** | 10 record types (5 documents, 4 child tables, 1 settings record), 3 roles, 1 menu |
-| **Depends on** | Ferrum platform `>=0.3.2, <0.4`; ERP `>=0.28.3` (installing Government installs ERP) |
+| **Depends on** | Ferrum platform `>=0.4.0, <0.5`; ERP `>=0.28.3` (installing Government installs ERP) |
 | **Works with** | ERP (customers, items, companies, sales invoices), the platform's notifications and portal |
 | **Languages** | English, Arabic, Hindi (words and record names); right-to-left layout |
 | **Tests** | 4 Rust tests (one walks a town hall on PostgreSQL) and a UI suite |
@@ -375,6 +375,7 @@ version bought and how it is run.
 
 ### ✅ Recently shipped
 
+- [x] **0.4.0** Upkeep runs one workspace at a time, on whichever replica is free; needs Ferrum 0.4.0.
 - [x] **0.3.4** Rebuilt on Ferrum-Frontend 06bd1a2: the officers' and the portal's pages start through `mountApp`; no routes to the screens apps no longer have.
 - [x] **0.3.3** An applicant's customer is found or made through ERP's portal functions: never a disabled customer or a web shop's guest, and one customer for two submissions at once.
 - [x] **0.3.2** Tuned design system: better menu icons, lighter first page, cleaner print.
@@ -424,7 +425,7 @@ version bought and how it is run.
 ## 🚀 Install
 
 Government is a native Ferrum app: the Ferrum server includes it (`runtime: native`) and a workspace turns it on from
-**App Manager**. It needs platform `>=0.3.2, <0.4`. Installing it installs **ERP**, which invoices fees.
+**App Manager**. It needs platform `>=0.4.0, <0.5`. Installing it installs **ERP**, which invoices fees.
 
 After installing:
 

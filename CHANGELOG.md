@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+Needs Ferrum 0.4.0 (apps' upkeep runs one workspace at a time, on whichever replica is free). No database or interface change.
+
+**Upkeep is one workspace's.** `maintenance(k, tenant)` and `maintenance_on(k, tenant, today)` expire permits, remind holders and mark late cases overdue in the one workspace the platform hands them; the list of workspaces and the installation check are the platform's.
+
 ## 0.3.4
 
 Needs the same platform as 0.3.3. No database change. Interface only, `ui/dist` rebuilt with Ferrum-Frontend `06bd1a2`.
